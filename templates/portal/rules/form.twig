@@ -1,0 +1,79 @@
+{% extends "portal/layout.twig" %}
+{% block title %}{{ rule ? 'Edit rule' : 'New rule' }} — {{ tenant.name }}{% endblock %}
+
+{% block sub_nav %}{% include 'portal/_tenant_nav.twig' with {'tenant': tenant, 'active': 'rules'} %}{% endblock %}
+
+{% block content %}
+<div class="card" style="max-width:720px;">
+    <h2>{{ rule ? 'Edit rule' : 'New rule' }}</h2>
+
+    {% if errors %}
+        <div class="alert alert-error">
+            <ul style="margin:0;padding-left:18px;">
+                {% for e in errors %}<li>{{ e }}</li>{% endfor %}
+            </ul>
+        </div>
+    {% endif %}
+
+    {% if templates is empty %}
+        <div class="alert alert-error">This tenant has no templates yet — <a href="/portal/tenants/{{ tenant.id }}/templates/new">create one</a> before adding rules.</div>
+    {% endif %}
+
+    <form method="post" action="{{ rule ? '/portal/tenants/' ~ tenant.id ~ '/rules/' ~ rule.id : '/portal/tenants/' ~ tenant.id ~ '/rules' }}">
+        <input type="hidden" name="_csrf" value="{{ csrf_token }}">
+
+        <label for="template_id">Template</label>
+        <select id="template_id" name="template_id" required>
+            <option value="">— select —</option>
+            {% for t in templates %}
+                <option value="{{ t.id }}" {{ form.template_id == t.id ? 'selected' : '' }}>{{ t.name }}</option>
+            {% endfor %}
+        </select>
+
+        <label for="from_domain">FROM domain</label>
+        <input id="from_domain" name="from_domain" type="text" value="{{ form.from_domain }}" required placeholder="acme.com">
+        <div class="muted" style="font-size:13px;">The domain part of the sender's address (e.g. <code>acme.com</code>).</div>
+
+        <div class="grid-two" style="margin-top:8px;">
+            <div>
+                <label for="language">Language (optional)</label>
+                <input id="language" name="language" type="text" value="{{ form.language }}" placeholder="de" maxlength="8">
+                <div class="muted" style="font-size:13px;">Match the user's <code>preferredLanguage</code> from Graph (e.g. <code>de</code>, <code>en</code>). Leave blank to match any.</div>
+            </div>
+            <div>
+                <label for="mailbox_type">Mailbox type</label>
+                <select id="mailbox_type" name="mailbox_type">
+                    <option value=""         {{ form.mailbox_type == '' ?         'selected' : '' }}>Any</option>
+                    <option value="personal" {{ form.mailbox_type == 'personal' ? 'selected' : '' }}>Personal</option>
+                    <option value="shared"   {{ form.mailbox_type == 'shared'   ? 'selected' : '' }}>Shared</option>
+                </select>
+            </div>
+        </div>
+
+        <label for="recipient_scope">Recipient scope</label>
+        <select id="recipient_scope" name="recipient_scope">
+            <option value="all"      {{ form.recipient_scope == 'all'      ? 'selected' : '' }}>All recipients (always apply)</option>
+            <option value="external" {{ form.recipient_scope == 'external' ? 'selected' : '' }}>External — at least one recipient outside our domains</option>
+            <option value="internal" {{ form.recipient_scope == 'internal' ? 'selected' : '' }}>Internal — every recipient inside our domains</option>
+        </select>
+        <div class="muted" style="font-size:13px;">Internal/external is determined against the tenant's <a href="/portal/tenants/{{ tenant.id }}/edit">owned email domains</a>.</div>
+
+        <div class="grid-two" style="margin-top:8px;">
+            <div>
+                <label for="priority">Priority</label>
+                <input id="priority" name="priority" type="number" min="0" step="1" value="{{ form.priority }}">
+                <div class="muted" style="font-size:13px;">Lower number = matched first.</div>
+            </div>
+            <div>
+                <label style="display:flex;align-items:center;gap:8px;margin-top:24px;">
+                    <input type="checkbox" name="is_fallback" value="1" {{ form.is_fallback ? 'checked' : '' }}>
+                    Fallback rule (used only when no other rule matches)
+                </label>
+            </div>
+        </div>
+
+        <button type="submit" class="btn btn-primary" {{ templates is empty ? 'disabled' : '' }}>{{ rule ? 'Save changes' : 'Create rule' }}</button>
+        <a class="btn" href="/portal/tenants/{{ tenant.id }}/rules" style="margin-left:8px;">Cancel</a>
+    </form>
+</div>
+{% endblock %}

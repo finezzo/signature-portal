@@ -1,0 +1,34 @@
+{% extends "portal/layout.twig" %}
+{% block title %}Tenants — SignaturePortal{% endblock %}
+
+{% block content %}
+<div class="page-header">
+    <h1>Tenants</h1>
+    {% if current_user.role == 'superadmin' %}
+        <a class="btn btn-primary" href="/portal/tenants/new">New tenant</a>
+    {% endif %}
+</div>
+
+{% if tenants is empty %}
+    <p class="muted">No tenants yet.</p>
+{% else %}
+<table class="data-table">
+    <thead><tr><th>Name</th><th>Slug</th><th>Domains</th><th>API key</th><th></th></tr></thead>
+    <tbody>
+    {% for t in tenants %}
+        <tr>
+            <td><a href="/portal/tenants/{{ t.id }}">{{ t.name }}</a></td>
+            <td><code>{{ t.slug }}</code></td>
+            <td>{{ t.emailDomains|join(', ') ?: '—' }}</td>
+            <td>{{ t.apiKeyEncrypted ? 'set' : 'not set' }}</td>
+            <td class="actions">
+                <a href="/portal/tenants/{{ t.id }}/templates">Templates</a>
+                <a href="/portal/tenants/{{ t.id }}/rules">Rules</a>
+                <a href="/portal/tenants/{{ t.id }}/simulator">Simulator</a>
+            </td>
+        </tr>
+    {% endfor %}
+    </tbody>
+</table>
+{% endif %}
+{% endblock %}

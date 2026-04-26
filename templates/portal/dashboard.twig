@@ -1,0 +1,39 @@
+{% extends "portal/layout.twig" %}
+{% block title %}Dashboard — SignaturePortal{% endblock %}
+
+{% block content %}
+<h1>Dashboard</h1>
+
+<div class="stat-grid">
+    <a class="stat" href="/portal/tenants">
+        <div class="stat-value">{{ counts.tenants }}</div>
+        <div class="stat-label">Tenants</div>
+    </a>
+    <div class="stat">
+        <div class="stat-value">{{ counts.templates }}</div>
+        <div class="stat-label">Templates</div>
+    </div>
+    <div class="stat">
+        <div class="stat-value">{{ counts.rules }}</div>
+        <div class="stat-label">Rules</div>
+    </div>
+</div>
+
+<h2>Tenants</h2>
+{% if tenants is empty %}
+    <p class="muted">No tenants yet. <a href="/portal/tenants/new">Create your first tenant</a>.</p>
+{% else %}
+<table class="data-table">
+    <thead><tr><th>Name</th><th>Slug</th><th>Created</th></tr></thead>
+    <tbody>
+    {% for t in tenants %}
+        <tr>
+            <td><a href="/portal/tenants/{{ t.id }}">{{ t.name }}</a></td>
+            <td><code>{{ t.slug }}</code></td>
+            <td>{{ t.created_at }}</td>
+        </tr>
+    {% endfor %}
+    </tbody>
+</table>
+{% endif %}
+{% endblock %}

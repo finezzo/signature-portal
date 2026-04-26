@@ -1,0 +1,152 @@
+{% extends "portal/layout.twig" %}
+{% block title %}{{ template ? 'Edit template' : 'New template' }} — {{ tenant.name }}{% endblock %}
+
+{% block sub_nav %}{% include 'portal/_tenant_nav.twig' with {'tenant': tenant, 'active': 'templates'} %}{% endblock %}
+
+{% block content %}
+<h2>{{ template ? 'Edit template' : 'New template' }}</h2>
+
+{% if errors %}
+    <div class="alert alert-error">
+        <ul style="margin:0;padding-left:18px;">
+            {% for e in errors %}<li>{{ e }}</li>{% endfor %}
+        </ul>
+    </div>
+{% endif %}
+
+<form method="post" id="template-form"
+      action="{{ template ? '/portal/tenants/' ~ tenant.id ~ '/templates/' ~ template.id : '/portal/tenants/' ~ tenant.id ~ '/templates' }}">
+    <input type="hidden" name="_csrf" value="{{ csrf_token }}">
+
+    <label for="name">Name</label>
+    <input id="name" name="name" type="text" value="{{ form.name }}" required>
+
+    <label for="html" style="margin-top:16px;">HTML body</label>
+    <textarea id="html" name="html" rows="14">{{ form.html }}</textarea>
+    <div class="muted" style="font-size:13px;margin-top:6px;">
+        Use the <strong>Token</strong> menu in the editor toolbar to insert placeholders.
+        Switch to source view (<code>&lt;/&gt;</code>) for raw HTML edits.
+        On save, HTML is sanitized via HTML Purifier.
+    </div>
+
+    <details style="margin-top:24px;">
+        <summary><strong>Live preview</strong> <span class="muted" style="font-weight:normal;">(sanitized, sample tokens)</span></summary>
+        <iframe id="preview-frame" sandbox="allow-same-origin"
+                style="width:100%;height:280px;border:1px solid var(--border);border-radius:6px;background:#fff;margin-top:8px;"></iframe>
+        <button type="button" id="refresh-preview" class="btn" style="margin-top:8px;">Refresh preview</button>
+    </details>
+
+    <div style="margin-top:24px;">
+        <button type="submit" class="btn btn-primary">{{ template ? 'Save changes' : 'Create template' }}</button>
+        <a class="btn" href="/portal/tenants/{{ tenant.id }}/templates" style="margin-left:8px;">Cancel</a>
+    </div>
+</form>
+
+<script src="https://cdn.jsdelivr.net/npm/tinymce@6.8.3/tinymce.min.js" referrerpolicy="origin"></script>
+<script>
+(function () {
+    const csrf       = {{ csrf_token|json_encode|raw }};
+    const previewUrl = {{ ('/portal/tenants/' ~ tenant.id ~ '/templates/preview')|json_encode|raw }};
+    const ta         = document.getElementById('html');
+    const frame      = document.getElementById('preview-frame');
+    const refreshBtn = document.getElementById('refresh-preview');
+
+    const TOKENS = [
+        { value: '{display_name}',   label: 'Display name' },
+        { value: '{first_name}',     label: 'First name' },
+        { value: '{last_name}',      label: 'Last name' },
+        { value: '{email}',          label: 'Email (display)' },
+        { value: '{job_title_line}', label: 'Job title' },
+        { value: '{phone_lines}',    label: 'Phone lines' },
+    ];
+
+    let inflight = null;
+    async function refresh(currentHtml) {
+        if (inflight) inflight.abort();
+        const ctl = new AbortController();
+        inflight = ctl;
+        try {
+            const res = await fetch(previewUrl, {
+                method: 'POST',
+                headers: {'Content-Type': 'application/x-www-form-urlencoded', 'X-CSRF-Token': csrf},
+                body: 'html=' + encodeURIComponent(currentHtml) + '&_csrf=' + encodeURIComponent(csrf),
+                signal: ctl.signal,
+                credentials: 'same-origin',
+            });
+            const html = await res.text();
+            const doc = frame.contentDocument || frame.contentWindow.document;
+            doc.open(); doc.write(html); doc.close();
+        } catch (e) {
+            if (e.name !== 'AbortError') console.warn('preview failed', e);
+        }
+    }
+
+    tinymce.init({
+        target: ta,
+        license_key: 'gpl',  // self-hosted community / LGPL build
+        height: 480,
+        menubar: false,
+        branding: false,
+        promotion: false,
+        statusbar: true,
+        plugins: 'link image table lists code preview autolink searchreplace charmap visualblocks visualchars',
+        toolbar: [
+            'undo redo | blocks fontfamily fontsize | bold italic underline forecolor backcolor',
+            'alignleft aligncenter alignright | bullist numlist outdent indent | link image | table | inserttoken | code preview removeformat',
+        ],
+        content_style:
+            'body{font-family:Arial,Helvetica,sans-serif;font-size:13px;color:#333;padding:8px}' +
+            ' .sigportal-token{background:#fef3c7;color:#92400e;padding:0 4px;border-radius:3px;font-family:ui-monospace,Menlo,Consolas,monospace}',
+        // Be permissive — Purifier sanitizes server-side. Allowing inline styles
+        // and font tags is intentional: Outlook signatures rely on them.
+        valid_elements: '*[*]',
+        extended_valid_elements: '*[*]',
+        forced_root_block: 'p',
+        convert_urls: false,
+        entity_encoding: 'raw',
+        // Disable the auto-clean that strips Outlook-friendly markup.
+        verify_html: false,
+        setup: function (editor) {
+            editor.ui.registry.addMenuButton('inserttoken', {
+                text: 'Token',
+                tooltip: 'Insert a token (replaced at delivery time with the user\'s profile data)',
+                fetch: function (cb) {
+                    cb(TOKENS.map(function (t) {
+                        return {
+                            type: 'menuitem',
+                            text: t.value + '   — ' + t.label,
+                            onAction: function () {
+                                editor.insertContent('<span class="sigportal-token" data-token="1">' + t.value + '</span>&nbsp;');
+                            },
+                        };
+                    }));
+                },
+            });
+
+            // Debounced live preview on each change.
+            let t;
+            editor.on('input change keyup undo redo', function () {
+                clearTimeout(t);
+                t = setTimeout(function () {
+                    editor.save();             // sync to underlying textarea
+                    refresh(editor.getContent());
+                }, 500);
+            });
+
+            editor.on('init', function () {
+                refresh(editor.getContent());
+            });
+
+            // Keep the textarea in sync just before submit (defensive).
+            const form = document.getElementById('template-form');
+            form.addEventListener('submit', function () { editor.save(); });
+        },
+    });
+
+    refreshBtn.addEventListener('click', function () {
+        const ed = tinymce.activeEditor;
+        if (ed) refresh(ed.getContent());
+    });
+})();
+</script>
+{% endblock %}

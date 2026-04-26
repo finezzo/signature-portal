@@ -1,0 +1,64 @@
+{% extends "portal/layout.twig" %}
+{% block title %}{{ tenant ? 'Edit tenant' : 'New tenant' }} — SignaturePortal{% endblock %}
+
+{% block sub_nav %}
+    {% if tenant %}{% include 'portal/_tenant_nav.twig' with {'tenant': tenant, 'active': 'settings'} %}{% endif %}
+{% endblock %}
+
+{% block content %}
+<div class="card" style="max-width:720px;">
+    <h2>{{ tenant ? 'Edit tenant settings' : 'New tenant' }}</h2>
+
+    {% if errors %}
+        <div class="alert alert-error">
+            <ul style="margin:0;padding-left:18px;">
+                {% for e in errors %}<li>{{ e }}</li>{% endfor %}
+            </ul>
+        </div>
+    {% endif %}
+
+    <form method="post" action="{{ tenant ? '/portal/tenants/' ~ tenant.id : '/portal/tenants' }}">
+        <input type="hidden" name="_csrf" value="{{ csrf_token }}">
+
+        <label for="name">Name</label>
+        <input id="name" name="name" type="text" value="{{ form.name }}" required>
+
+        {% if not tenant %}
+        <label for="slug">Slug</label>
+        <input id="slug" name="slug" type="text" value="{{ form.slug }}" required pattern="^[a-z0-9](?:[a-z0-9-]{0,62}[a-z0-9])?$">
+        <div class="muted" style="font-size:13px;">Lowercase, alphanumerics and dashes. Used in URLs and the add-in manifest. Cannot be changed later.</div>
+        {% endif %}
+
+        <label for="email_domains">Owned email domains</label>
+        <textarea id="email_domains" name="email_domains" rows="3" placeholder="acme.com&#10;acme.de">{{ form.email_domains }}</textarea>
+        <div class="muted" style="font-size:13px;">One per line, comma, or space. Used to classify recipients as internal or external for rule matching.</div>
+
+        {% if tenant %}
+        <h3 style="margin-top:32px;">Microsoft Entra (Azure AD)</h3>
+        <p class="muted" style="font-size:13px;">Per-tenant app registration with <code>User.Read.All</code> application permission. Required for live signature delivery (Phase 3) and Entra SSO.</p>
+
+        <label for="entra_tenant_id">Entra tenant ID</label>
+        <input id="entra_tenant_id" name="entra_tenant_id" type="text" value="{{ form.entra_tenant_id }}" placeholder="00000000-0000-0000-0000-000000000000">
+
+        <label for="entra_client_id">Entra client ID</label>
+        <input id="entra_client_id" name="entra_client_id" type="text" value="{{ form.entra_client_id }}">
+
+        <label for="entra_client_secret">Entra client secret</label>
+        <input id="entra_client_secret" name="entra_client_secret" type="password" autocomplete="new-password" placeholder="Leave blank to keep the existing secret">
+        <div class="muted" style="font-size:13px;">Stored encrypted at rest with libsodium.</div>
+        {% endif %}
+
+        <button type="submit" class="btn btn-primary">{{ tenant ? 'Save changes' : 'Create tenant' }}</button>
+        {% if tenant and current_user.role == 'superadmin' %}
+            <button form="delete-tenant" type="submit" class="btn btn-danger" style="margin-left:8px;"
+                onclick="return confirm('Delete this tenant and ALL its templates, rules, and tokens?')">Delete tenant</button>
+        {% endif %}
+    </form>
+
+    {% if tenant and current_user.role == 'superadmin' %}
+    <form id="delete-tenant" method="post" action="/portal/tenants/{{ tenant.id }}/delete" class="inline">
+        <input type="hidden" name="_csrf" value="{{ csrf_token }}">
+    </form>
+    {% endif %}
+</div>
+{% endblock %}

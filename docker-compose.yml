@@ -1,0 +1,46 @@
+services:
+  app:
+    build: ./docker
+    container_name: sigportal-app
+    ports:
+      - "8090:80"
+    volumes:
+      - .:/var/www/html
+    depends_on:
+      mysql:
+        condition: service_healthy
+    environment:
+      APACHE_DOCUMENT_ROOT: /var/www/html/public
+
+  mysql:
+    image: mysql:8.0
+    container_name: sigportal-mysql
+    environment:
+      MYSQL_ROOT_PASSWORD: root
+      MYSQL_DATABASE: signatureportal
+      MYSQL_USER: sigportal
+      MYSQL_PASSWORD: sigportal
+    ports:
+      - "3317:3306"
+    volumes:
+      - mysql-data:/var/lib/mysql
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "127.0.0.1", "-uroot", "-proot"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+  phpmyadmin:
+    image: phpmyadmin:5
+    container_name: sigportal-phpmyadmin
+    ports:
+      - "8091:80"
+    environment:
+      PMA_HOST: mysql
+      PMA_USER: root
+      PMA_PASSWORD: root
+    depends_on:
+      - mysql
+
+volumes:
+  mysql-data:

@@ -1,0 +1,49 @@
+{% extends "portal/layout.twig" %}
+{% block title %}Rules — {{ tenant.name }}{% endblock %}
+
+{% block sub_nav %}{% include 'portal/_tenant_nav.twig' with {'tenant': tenant, 'active': 'rules'} %}{% endblock %}
+
+{% block content %}
+<div class="page-header">
+    <h2>Rules</h2>
+    <a class="btn btn-primary" href="/portal/tenants/{{ tenant.id }}/rules/new">New rule</a>
+</div>
+
+<p class="muted" style="font-size:13px;">Evaluated in order: non-fallback rules first by priority ascending, then fallbacks. The first rule whose conditions all match wins.</p>
+
+{% if rules is empty %}
+    <p class="muted">No rules yet.</p>
+{% else %}
+<table class="data-table">
+    <thead><tr>
+        <th>#</th><th>From-domain</th><th>Lang</th><th>Mailbox</th><th>Recipients</th><th>Template</th><th>Priority</th><th>Fallback</th><th></th>
+    </tr></thead>
+    <tbody>
+    {% for r in rules %}
+        <tr>
+            <td>{{ r.id }}</td>
+            <td><code>{{ r.fromDomain }}</code></td>
+            <td>{{ r.language ?: 'any' }}</td>
+            <td>{{ r.mailboxType ?: 'any' }}</td>
+            <td>
+                {% if r.recipientScope == 'external' %}<span class="badge badge-ext">external</span>
+                {% elseif r.recipientScope == 'internal' %}<span class="badge badge-int">internal</span>
+                {% else %}<span class="badge">all</span>{% endif %}
+            </td>
+            <td>{{ templates_map[r.templateId].name|default('— template missing —') }}</td>
+            <td>{{ r.priority }}</td>
+            <td>{{ r.isFallback ? 'yes' : '' }}</td>
+            <td class="actions">
+                <a href="/portal/tenants/{{ tenant.id }}/rules/{{ r.id }}/edit">Edit</a>
+                <form method="post" action="/portal/tenants/{{ tenant.id }}/rules/{{ r.id }}/delete" class="inline"
+                      onsubmit="return confirm('Delete this rule?')">
+                    <input type="hidden" name="_csrf" value="{{ csrf_token }}">
+                    <button type="submit" class="link-button">Delete</button>
+                </form>
+            </td>
+        </tr>
+    {% endfor %}
+    </tbody>
+</table>
+{% endif %}
+{% endblock %}

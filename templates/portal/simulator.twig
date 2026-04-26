@@ -1,0 +1,88 @@
+{% extends "portal/layout.twig" %}
+{% block title %}Simulator — {{ tenant.name }}{% endblock %}
+
+{% block sub_nav %}{% include 'portal/_tenant_nav.twig' with {'tenant': tenant, 'active': 'simulator'} %}{% endblock %}
+
+{% block content %}
+<h2>Simulator</h2>
+<p class="muted" style="font-size:13px;">Plug in a hypothetical send and see which rule fires and what the rendered signature looks like (sample data; no Graph call).</p>
+
+<div class="grid-two">
+    <div class="card">
+        <form method="post" action="/portal/tenants/{{ tenant.id }}/simulator">
+            <input type="hidden" name="_csrf" value="{{ csrf_token }}">
+
+            <label for="from_email">FROM</label>
+            <input id="from_email" name="from_email" type="email" value="{{ form.from_email }}" required>
+
+            <label for="recipients">Recipients</label>
+            <textarea id="recipients" name="recipients" rows="3" placeholder="one per line, comma, or space">{{ form.recipients }}</textarea>
+
+            <div class="grid-two" style="margin-top:8px;">
+                <div>
+                    <label for="language">Language</label>
+                    <input id="language" name="language" type="text" value="{{ form.language }}" maxlength="8">
+                </div>
+                <div>
+                    <label for="mailbox_type">Mailbox type</label>
+                    <select id="mailbox_type" name="mailbox_type">
+                        <option value="personal" {{ form.mailbox_type == 'personal' ? 'selected' : '' }}>Personal</option>
+                        <option value="shared"   {{ form.mailbox_type == 'shared'   ? 'selected' : '' }}>Shared</option>
+                        <option value=""         {{ form.mailbox_type == ''         ? 'selected' : '' }}>(unset)</option>
+                    </select>
+                </div>
+            </div>
+
+            <button type="submit" class="btn btn-primary" style="margin-top:16px;">Simulate</button>
+        </form>
+    </div>
+
+    <div class="card">
+        <h3 style="margin-top:0;">Result</h3>
+        {% if result is null %}
+            <p class="muted">Submit the form to run a simulation.</p>
+        {% elseif result.rule is null %}
+            <div class="alert alert-error">No rule matched. The add-in would not inject a signature.</div>
+            <details style="margin-top:12px;">
+                <summary>Why each rule did not match</summary>
+                <ul>
+                    {% for r in result.reasons %}
+                        <li>Rule #{{ r.rule_id }}: {{ r.why }}</li>
+                    {% else %}
+                        <li class="muted">No rules defined.</li>
+                    {% endfor %}
+                </ul>
+            </details>
+        {% else %}
+            <div class="alert alert-success">
+                Matched rule <strong>#{{ result.rule.id }}</strong> →
+                template <strong>{{ result.template.name|default('(missing)') }}</strong>
+            </div>
+            <dl class="kv" style="margin-top:12px;">
+                <dt>From-domain</dt>      <dd><code>{{ result.context.fromDomain }}</code></dd>
+                <dt>Recipients</dt>       <dd>{{ result.recipients|join(', ') ?: '(none)' }}</dd>
+                <dt>Language</dt>         <dd>{{ result.context.language ?: '—' }}</dd>
+                <dt>Mailbox type</dt>     <dd>{{ result.context.mailboxType ?: '—' }}</dd>
+                <dt>Recipient scope</dt>  <dd>{{ result.rule.recipientScope }}</dd>
+            </dl>
+            <details style="margin-top:8px;">
+                <summary>Per-rule decision trace</summary>
+                <ul>
+                    {% for r in result.reasons %}
+                        <li>Rule #{{ r.rule_id }}: {{ r.ok ? '✓ matched' : '✗ ' ~ r.why }}</li>
+                    {% endfor %}
+                </ul>
+            </details>
+        {% endif %}
+    </div>
+</div>
+
+{% if result and result.rendered_html %}
+<div style="margin-top:24px;">
+    <h3>Rendered signature (sample data)</h3>
+    <iframe sandbox="allow-same-origin"
+            srcdoc="{{ result.rendered_html|e('html_attr') }}"
+            style="width:100%;height:300px;border:1px solid var(--border);border-radius:6px;background:#fff;"></iframe>
+</div>
+{% endif %}
+{% endblock %}

@@ -1,0 +1,40 @@
+<!doctype html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>{% block title %}SignaturePortal{% endblock %}</title>
+    <link rel="stylesheet" href="/assets/css/portal.css">
+</head>
+<body class="{% block body_class %}{% endblock %}">
+{% block topbar %}
+    {% if current_user %}
+    <header class="topbar">
+        <div class="topbar-inner">
+            <a class="brand" href="/portal/dashboard">SignaturePortal</a>
+            <nav class="topbar-nav">
+                <a href="/portal/dashboard">Dashboard</a>
+                <a href="/portal/tenants">Tenants</a>
+                <span class="user">{{ current_user.email }}</span>
+                <form method="post" action="/portal/logout" class="inline">
+                    <input type="hidden" name="_csrf" value="{{ csrf_token }}">
+                    <button type="submit" class="link-button">Sign out</button>
+                </form>
+            </nav>
+        </div>
+    </header>
+    {% endif %}
+{% endblock %}
+<main class="main">
+    <div class="container">
+        {% if flashes %}
+            {% for f in flashes %}
+                <div class="alert alert-{{ f.type }}">{{ f.message }}</div>
+            {% endfor %}
+        {% endif %}
+        {% block sub_nav %}{% endblock %}
+        {% block content %}{% endblock %}
+    </div>
+</main>
+</body>
+</html>

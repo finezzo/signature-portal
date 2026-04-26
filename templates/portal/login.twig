@@ -1,0 +1,28 @@
+{% extends "portal/layout.twig" %}
+{% block title %}Sign in — SignaturePortal{% endblock %}
+{% block body_class %}auth{% endblock %}
+
+{% block topbar %}{% endblock %}
+
+{% block content %}
+<div class="card login-card">
+    <h1>SignaturePortal</h1>
+    <p class="muted">Sign in to manage tenants, templates, and rules.</p>
+
+    {% if error %}
+    <div class="alert alert-error">{{ error }}</div>
+    {% endif %}
+
+    <form method="post" action="/portal/login" autocomplete="on">
+        <input type="hidden" name="_csrf" value="{{ csrf_token }}">
+
+        <label for="email">Email</label>
+        <input id="email" name="email" type="email" autocomplete="username" required autofocus>
+
+        <label for="password">Password</label>
+        <input id="password" name="password" type="password" autocomplete="current-password" required>
+
+        <button type="submit" class="btn btn-primary">Sign in</button>
+    </form>
+</div>
+{% endblock %}

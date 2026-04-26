@@ -1,0 +1,13 @@
+<div class="tenant-header">
+    <div>
+        <h1 class="tenant-title">{{ tenant.name }}</h1>
+        <div class="muted"><code>{{ tenant.slug }}</code></div>
+    </div>
+</div>
+<nav class="sub-nav">
+    <a href="/portal/tenants/{{ tenant.id }}"           class="{{ active == 'overview'  ? 'active' : '' }}">Overview</a>
+    <a href="/portal/tenants/{{ tenant.id }}/templates" class="{{ active == 'templates' ? 'active' : '' }}">Templates</a>
+    <a href="/portal/tenants/{{ tenant.id }}/rules"     class="{{ active == 'rules'     ? 'active' : '' }}">Rules</a>
+    <a href="/portal/tenants/{{ tenant.id }}/simulator" class="{{ active == 'simulator' ? 'active' : '' }}">Simulator</a>
+    <a href="/portal/tenants/{{ tenant.id }}/edit"      class="{{ active == 'settings'  ? 'active' : '' }}">Settings</a>
+</nav>

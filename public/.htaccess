@@ -1,0 +1,20 @@
+# Front controller — route everything that's not a real file/dir to index.php
+RewriteEngine On
+
+# Allow direct access to the installer while config/config.php does not exist.
+RewriteRule ^install\.php$ - [L]
+
+# Static files and directories pass through.
+RewriteCond %{REQUEST_FILENAME} -f [OR]
+RewriteCond %{REQUEST_FILENAME} -d
+RewriteRule ^ - [L]
+
+# Everything else → front controller.
+RewriteRule ^ index.php [QSA,L]
+
+# Hardening headers (per-tenant CSP for the portal is set in PHP).
+<IfModule mod_headers.c>
+    Header set X-Content-Type-Options "nosniff"
+    Header set X-Frame-Options "SAMEORIGIN"
+    Header set Referrer-Policy "strict-origin-when-cross-origin"
+</IfModule>

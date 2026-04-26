@@ -1,0 +1,34 @@
+{% extends "portal/layout.twig" %}
+{% block title %}Templates — {{ tenant.name }}{% endblock %}
+
+{% block sub_nav %}{% include 'portal/_tenant_nav.twig' with {'tenant': tenant, 'active': 'templates'} %}{% endblock %}
+
+{% block content %}
+<div class="page-header">
+    <h2>Templates</h2>
+    <a class="btn btn-primary" href="/portal/tenants/{{ tenant.id }}/templates/new">New template</a>
+</div>
+
+{% if templates is empty %}
+    <p class="muted">No templates yet for this tenant.</p>
+{% else %}
+<table class="data-table">
+    <thead><tr><th>Name</th><th>Updated</th><th></th></tr></thead>
+    <tbody>
+    {% for t in templates %}
+        <tr>
+            <td><a href="/portal/tenants/{{ tenant.id }}/templates/{{ t.id }}/edit">{{ t.name }}</a></td>
+            <td>{{ t.updatedAt }}</td>
+            <td class="actions">
+                <form method="post" action="/portal/tenants/{{ tenant.id }}/templates/{{ t.id }}/delete" class="inline"
+                      onsubmit="return confirm('Delete this template? Rules using it will be deleted too.')">
+                    <input type="hidden" name="_csrf" value="{{ csrf_token }}">
+                    <button type="submit" class="link-button">Delete</button>
+                </form>
+            </td>
+        </tr>
+    {% endfor %}
+    </tbody>
+</table>
+{% endif %}
+{% endblock %}
