@@ -3,10 +3,15 @@ declare(strict_types=1);
 
 use App\Addin\ManifestGenerator;
 use App\Addin\SignatureService;
+use App\Audit\AuditLogger;
+use App\Audit\AuditRepository;
 use App\Auth\Authenticator;
 use App\Auth\Csrf;
+use App\Auth\EntraProvider;
 use App\Auth\PasswordHasher;
 use App\Auth\SessionManager;
+use App\Auth\SsoAuthenticator;
+use App\Auth\UserRepository;
 use App\Config\Config;
 use App\Crypto\Encryption;
 use App\Db\Database;
@@ -16,6 +21,7 @@ use App\Http\Middleware\AuthMiddleware;
 use App\Http\Middleware\CsrfMiddleware;
 use App\Http\Middleware\SessionStartMiddleware;
 use App\Http\Middleware\TwigGlobalsMiddleware;
+use App\Tenant\AssetRepository;
 use App\Tenant\DisplayEmailDeriver;
 use App\Tenant\RecipientClassifier;
 use App\Tenant\RuleEngine;
@@ -24,6 +30,7 @@ use App\Tenant\TemplateRenderer;
 use App\Tenant\TemplateRepository;
 use App\Tenant\TenantRepository;
 use App\Tenant\TenantService;
+use App\Tenant\UserOverrideRepository;
 use DI\Container;
 use GuzzleHttp\Client as GuzzleHttp;
 use Slim\Factory\AppFactory;
@@ -59,6 +66,20 @@ return (static function (): \Slim\App {
         $c->get(PasswordHasher::class),
         $c->get(SessionManager::class),
     ));
+    $container->set(EntraProvider::class, fn(Container $c) => new EntraProvider(
+        $c->get(Encryption::class),
+        (string) $c->get(Config::class)->get('base_url', ''),
+    ));
+    $container->set(SsoAuthenticator::class, fn(Container $c) => new SsoAuthenticator(
+        $c->get(\PDO::class),
+        $c->get(SessionManager::class),
+    ));
+    $container->set(UserRepository::class, fn(Container $c) => new UserRepository($c->get(\PDO::class)));
+    $container->set(AuditLogger::class, fn(Container $c) => new AuditLogger(
+        $c->get(\PDO::class),
+        $c->get(SessionManager::class),
+    ));
+    $container->set(AuditRepository::class, fn(Container $c) => new AuditRepository($c->get(\PDO::class)));
 
     $container->set(SessionStartMiddleware::class, fn(Container $c) => new SessionStartMiddleware($c->get(SessionManager::class)));
     $container->set(CsrfMiddleware::class,         fn(Container $c) => new CsrfMiddleware($c->get(Csrf::class)));
@@ -81,8 +102,10 @@ return (static function (): \Slim\App {
 
     // Phase 2 services
     $container->set(TenantRepository::class,   fn(Container $c) => new TenantRepository($c->get(\PDO::class)));
+    $container->set(AssetRepository::class,    fn() => new AssetRepository($rootDir . '/public/assets'));
     $container->set(TemplateRepository::class, fn(Container $c) => new TemplateRepository($c->get(\PDO::class)));
     $container->set(RuleRepository::class,     fn(Container $c) => new RuleRepository($c->get(\PDO::class)));
+    $container->set(UserOverrideRepository::class, fn(Container $c) => new UserOverrideRepository($c->get(\PDO::class)));
     $container->set(RecipientClassifier::class,fn() => new RecipientClassifier());
     $container->set(RuleEngine::class,         fn(Container $c) => new RuleEngine(
         $c->get(RuleRepository::class), $c->get(RecipientClassifier::class)
@@ -114,6 +137,7 @@ return (static function (): \Slim\App {
         $c->get(TemplateRenderer::class),
         $c->get(GraphClient::class),
         $c->get(DisplayEmailDeriver::class),
+        $c->get(UserOverrideRepository::class),
     ));
 
     AppFactory::setContainer($container);

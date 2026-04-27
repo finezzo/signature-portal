@@ -3,11 +3,17 @@ declare(strict_types=1);
 
 namespace App\Portal;
 
+use App\Audit\AuditLogger;
 use App\Auth\SessionManager;
+use App\Config\Config;
+use App\Tenant\AssetRepository;
+use App\Tenant\SnippetLibrary;
+use App\Tenant\StarterTemplates;
 use App\Tenant\Template;
 use App\Tenant\TemplateRenderer;
 use App\Tenant\TemplateRepository;
 use App\Tenant\TenantRepository;
+use App\Tenant\TokenCatalog;
 use Psr\Http\Message\ResponseInterface;
 use Psr\Http\Message\ServerRequestInterface;
 use Slim\Psr7\Factory\ResponseFactory;
@@ -21,7 +27,16 @@ final class TemplateController
         private readonly TemplateRepository $templates,
         private readonly TemplateRenderer $renderer,
         private readonly SessionManager $session,
+        private readonly AuditLogger $audit,
+        private readonly AssetRepository $assets,
+        private readonly Config $config,
     ) {}
+
+    /** @return list<array{filename:string,size:int,mtime:int,url:string,content_type:string}> */
+    private function tenantAssets(\App\Tenant\Tenant $tenant): array
+    {
+        return $this->assets->list($tenant->slug, (string) $this->config->get('base_url', ''));
+    }
 
     public function index(ServerRequestInterface $request, ResponseInterface $response, array $args): ResponseInterface
     {
@@ -39,11 +54,24 @@ final class TemplateController
         [$tenant, $err] = $this->resolveTenant($request, $args);
         if ($err) return $err;
 
+        // ?starter=<id> pre-fills the editor with one of the bundled templates.
+        $starterId = (string) ($request->getQueryParams()['starter'] ?? '');
+        $picked    = $starterId !== '' ? StarterTemplates::find($starterId) : null;
+
+        $defaultHtml = $picked['html'] ?? StarterTemplates::all()[1]['html']; // two-column-divider as default
+        $defaultName = $picked['name'] ?? '';
+
         return $this->view->render($response, 'portal/templates/form.twig', [
-            'tenant'   => $tenant,
-            'template' => null,
-            'form'     => ['name' => '', 'html' => self::starterHtml()],
-            'errors'   => [],
+            'tenant'           => $tenant,
+            'template'         => null,
+            'form'             => ['name' => $defaultName, 'html' => $defaultHtml],
+            'errors'           => [],
+            'starters'         => StarterTemplates::all(),
+            'selected_starter' => $picked['id'] ?? null,
+            'token_groups'     => TokenCatalog::all(),
+            'tenant_assets'    => $this->tenantAssets($tenant),
+            'snippets'         => SnippetLibrary::all(),
+            'upload_url'       => "/portal/tenants/{$tenant->id}/assets/upload-json",
         ]);
     }
 
@@ -61,12 +89,18 @@ final class TemplateController
         if ($errors !== []) {
             return $this->view->render($response, 'portal/templates/form.twig', [
                 'tenant' => $tenant, 'template' => null, 'form' => $form, 'errors' => $errors,
+                'starters' => StarterTemplates::all(), 'selected_starter' => null,
+                'token_groups' => TokenCatalog::all(),
+                'tenant_assets' => $this->tenantAssets($tenant),
+                'snippets'      => SnippetLibrary::all(),
+                'upload_url'    => "/portal/tenants/{$tenant->id}/assets/upload-json",
             ]);
         }
 
         $sanitized = $this->renderer->sanitize($form['html']);
         $id = $this->templates->create($tenant->id, $form['name'], $sanitized);
 
+        $this->audit->record($tenant->id, 'template.created', 'template', $id, "Template '{$form['name']}' created");
         $this->session->flash('success', 'Template created.');
         return $response->withHeader('Location', "/portal/tenants/{$tenant->id}/templates/{$id}/edit")->withStatus(302);
     }
@@ -83,6 +117,10 @@ final class TemplateController
             'template' => $template,
             'form'     => ['name' => $template->name, 'html' => $template->html],
             'errors'   => [],
+            'token_groups'  => TokenCatalog::all(),
+            'tenant_assets' => $this->tenantAssets($tenant),
+                'snippets'      => SnippetLibrary::all(),
+                'upload_url'    => "/portal/tenants/{$tenant->id}/assets/upload-json",
         ]);
     }
 
@@ -102,12 +140,17 @@ final class TemplateController
         if ($errors !== []) {
             return $this->view->render($response, 'portal/templates/form.twig', [
                 'tenant' => $tenant, 'template' => $template, 'form' => $form, 'errors' => $errors,
+                'token_groups' => TokenCatalog::all(),
+                'tenant_assets' => $this->tenantAssets($tenant),
+                'snippets'      => SnippetLibrary::all(),
+                'upload_url'    => "/portal/tenants/{$tenant->id}/assets/upload-json",
             ]);
         }
 
         $sanitized = $this->renderer->sanitize($form['html']);
         $this->templates->update($template->id, $tenant->id, $form['name'], $sanitized);
 
+        $this->audit->record($tenant->id, 'template.updated', 'template', $template->id, "Template '{$form['name']}' saved");
         $this->session->flash('success', 'Template saved.');
         return $response->withHeader('Location', "/portal/tenants/{$tenant->id}/templates/{$template->id}/edit")->withStatus(302);
     }
@@ -117,8 +160,42 @@ final class TemplateController
         [$tenant, $err] = $this->resolveTenant($request, $args);
         if ($err) return $err;
         $this->templates->delete((int) $args['tid'], $tenant->id);
+        $this->audit->record($tenant->id, 'template.deleted', 'template', (int) $args['tid'], 'Template deleted');
         $this->session->flash('success', 'Template deleted.');
         return $response->withHeader('Location', "/portal/tenants/{$tenant->id}/templates")->withStatus(302);
+    }
+
+    public function duplicate(ServerRequestInterface $request, ResponseInterface $response, array $args): ResponseInterface
+    {
+        [$tenant, $err] = $this->resolveTenant($request, $args);
+        if ($err) return $err;
+        $template = $this->templates->find((int) $args['tid'], $tenant->id);
+        if ($template === null) return $this->notFound($response);
+
+        $newName = $this->uniqueDuplicateName($tenant->id, $template->name);
+        $newId   = $this->templates->create($tenant->id, $newName, $template->html);
+
+        $this->audit->record($tenant->id, 'template.duplicated', 'template', $newId, "Template '{$template->name}' cloned to '{$newName}'", ['source_id' => $template->id]);
+        $this->session->flash('success', "Template duplicated as \"{$newName}\".");
+        return $response->withHeader('Location', "/portal/tenants/{$tenant->id}/templates/{$newId}/edit")->withStatus(302);
+    }
+
+    /**
+     * Pick a name like "Foo (copy)" — or "Foo (copy 2)", "Foo (copy 3)", … —
+     * that doesn't collide with anything already in the tenant.
+     */
+    private function uniqueDuplicateName(int $tenantId, string $original): string
+    {
+        $existing = array_map(fn($t) => $t->name, $this->templates->listForTenant($tenantId));
+        $base = preg_replace('/\s*\(copy(?:\s+\d+)?\)\s*$/u', '', $original) ?? $original;
+        $candidate = $base . ' (copy)';
+        $i = 2;
+        while (in_array($candidate, $existing, true)) {
+            $candidate = $base . ' (copy ' . $i . ')';
+            $i++;
+            if ($i > 999) break; // sanity
+        }
+        return $candidate;
     }
 
     /** Live preview endpoint — sanitizes the posted HTML and renders with sample data. */
@@ -171,21 +248,4 @@ final class TemplateController
         return $errors;
     }
 
-    private static function starterHtml(): string
-    {
-        return <<<HTML
-<table cellpadding="0" cellspacing="0" border="0" style="font-family:Arial,sans-serif;font-size:13px;color:#333;">
-  <tr>
-    <td style="padding-right:12px;border-right:2px solid #2f6feb;">
-      <strong style="font-size:15px;">{display_name}</strong><br>
-      <span style="color:#6a737d;">{job_title_line}</span>
-    </td>
-    <td style="padding-left:12px;">
-      {phone_lines}<br>
-      <a href="mailto:{email}" style="color:#2f6feb;">{email}</a>
-    </td>
-  </tr>
-</table>
-HTML;
-    }
 }

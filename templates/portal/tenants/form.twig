@@ -34,6 +34,27 @@
         <div class="muted" style="font-size:13px;">One per line, comma, or space. Used to classify recipients as internal or external for rule matching.</div>
 
         {% if tenant %}
+        <h3 style="margin-top:32px;">Legal footer (disclaimer)</h3>
+        <p class="muted" style="font-size:13px;">
+            Appended to every signature this tenant renders. Useful for HRB/Geschäftsführer/Impressum lines that
+            are mandatory in Germany. HTML is sanitized with HTML Purifier on save. Tokens like <code>{email}</code>
+            also work here. Leave empty to disable.
+        </p>
+        <textarea name="disclaimer_html" rows="6" placeholder="&lt;div style=&quot;font-size:11px;color:#888;border-top:1px solid #ddd;margin-top:12px;padding-top:8px;&quot;&gt;&#10;Acme GmbH · Musterstr. 1 · 12345 Berlin · HRB 99999 B · GF: Anna Beispiel&#10;&lt;/div&gt;">{{ form.disclaimer_html }}</textarea>
+
+        <label for="shared_display_mode">Shared mailbox display mode</label>
+        <select id="shared_display_mode" name="shared_display_mode">
+            <option value="shared"  {% if form.shared_display_mode == 'shared'  %}selected{% endif %}>Shared address — show the team mailbox (e.g. sales@acme.com)</option>
+            <option value="derived" {% if form.shared_display_mode == 'derived' %}selected{% endif %}>Derived personal — compute the sender's personal address (e.g. s.mueller@acme.com)</option>
+        </select>
+        <div class="muted" style="font-size:13px;">
+            Controls the <code>{email}</code> token in the rendered signature when the FROM address is a shared mailbox.
+            "Shared address" is the Microsoft default — replies go back to the team. "Derived personal" makes the
+            shared mailbox appear personal (uses the composer's name + the from-domain).
+        </div>
+        {% endif %}
+
+        {% if tenant %}
         <h3 style="margin-top:32px;">Microsoft Entra (Azure AD)</h3>
         <p class="muted" style="font-size:13px;">Per-tenant app registration with <code>User.Read.All</code> application permission. Required for live signature delivery (Phase 3) and Entra SSO.</p>
 
@@ -46,6 +67,33 @@
         <label for="entra_client_secret">Entra client secret</label>
         <input id="entra_client_secret" name="entra_client_secret" type="password" autocomplete="new-password" placeholder="Leave blank to keep the existing secret">
         <div class="muted" style="font-size:13px;">Stored encrypted at rest with libsodium.</div>
+
+        <h3 style="margin-top:32px;">Single sign-on (Entra OIDC)</h3>
+        <p class="muted" style="font-size:13px;">
+            Lets portal admins sign in with their Microsoft 365 account. Reuses the Entra app
+            registration above. The redirect URI to register in Azure is shown on the tenant
+            overview page.
+        </p>
+
+        <label class="check-inline">
+            <input type="checkbox" name="sso_enabled" value="1" {% if form.sso_enabled %}checked{% endif %}>
+            Enable Entra SSO for this tenant
+        </label>
+
+        <label class="check-inline">
+            <input type="checkbox" name="sso_auto_provision" value="1" {% if form.sso_auto_provision %}checked{% endif %}>
+            Auto-provision unknown users on first SSO login
+        </label>
+        <div class="muted" style="font-size:13px;">
+            Off: only users with a matching email address in this tenant's user list can sign in.
+            On: any successful Entra sign-in creates a portal user with the role below.
+        </div>
+
+        <label for="sso_default_role">Default role for auto-provisioned users</label>
+        <select id="sso_default_role" name="sso_default_role">
+            <option value="tenant_editor" {% if form.sso_default_role == 'tenant_editor' %}selected{% endif %}>Tenant editor</option>
+            <option value="tenant_admin"  {% if form.sso_default_role == 'tenant_admin'  %}selected{% endif %}>Tenant admin</option>
+        </select>
         {% endif %}
 
         <button type="submit" class="btn btn-primary">{{ tenant ? 'Save changes' : 'Create tenant' }}</button>

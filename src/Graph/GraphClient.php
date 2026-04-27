@@ -28,7 +28,15 @@ final class GraphClient
     private const TOKEN_ENDPOINT = 'https://login.microsoftonline.com/%s/oauth2/v2.0/token';
     private const GRAPH_BASE     = 'https://graph.microsoft.com/v1.0';
     private const GRAPH_SCOPE    = 'https://graph.microsoft.com/.default';
-    private const USER_SELECT    = 'id,userPrincipalName,mail,displayName,givenName,surname,jobTitle,mobilePhone,businessPhones,preferredLanguage';
+    // The full set we ask Graph for. Adding fields here automatically makes
+    // them available as template tokens via UserProfile::tokens().
+    private const USER_SELECT    = 'id,userPrincipalName,mail,otherMails,proxyAddresses,'
+                                 . 'displayName,givenName,surname,middleName,'
+                                 . 'jobTitle,department,companyName,officeLocation,employeeId,employeeType,'
+                                 . 'mobilePhone,businessPhones,faxNumber,'
+                                 . 'streetAddress,city,state,postalCode,country,usageLocation,'
+                                 . 'preferredLanguage,aboutMe,'
+                                 . 'assignedLicenses,accountEnabled';
 
     public function __construct(
         private readonly Http $http,

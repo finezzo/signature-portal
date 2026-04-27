@@ -69,6 +69,27 @@
                     <input type="checkbox" name="is_fallback" value="1" {{ form.is_fallback ? 'checked' : '' }}>
                     Fallback rule (used only when no other rule matches)
                 </label>
+                <label style="display:flex;align-items:center;gap:8px;margin-top:8px;">
+                    <input type="checkbox" name="is_enabled" value="1" {{ form.is_enabled ? 'checked' : '' }}>
+                    Enabled (uncheck to deactivate without deleting)
+                </label>
+            </div>
+        </div>
+
+        <h3 style="margin-top:24px;">Validity window (optional)</h3>
+        <p class="muted" style="font-size:13px;">
+            Leave both empty to apply year-round. Useful for seasonal banners — e.g. set
+            <code>2026-12-15</code> to <code>2027-01-06</code> for a Christmas signature.
+            Compared against today's date inclusive on both ends.
+        </p>
+        <div class="grid-two" style="margin-top:8px;">
+            <div>
+                <label for="valid_from">Valid from</label>
+                <input id="valid_from"  name="valid_from"  type="date" value="{{ form.valid_from }}">
+            </div>
+            <div>
+                <label for="valid_until">Valid until</label>
+                <input id="valid_until" name="valid_until" type="date" value="{{ form.valid_until }}">
             </div>
         </div>
 

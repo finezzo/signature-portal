@@ -16,12 +16,19 @@
 {% else %}
 <table class="data-table">
     <thead><tr>
-        <th>#</th><th>From-domain</th><th>Lang</th><th>Mailbox</th><th>Recipients</th><th>Template</th><th>Priority</th><th>Fallback</th><th></th>
+        <th>#</th><th>Status</th><th>From-domain</th><th>Lang</th><th>Mailbox</th><th>Recipients</th><th>Template</th><th>Priority</th><th>Window</th><th>Fallback</th><th></th>
     </tr></thead>
     <tbody>
     {% for r in rules %}
-        <tr>
+        <tr style="{{ not r.isEnabled ? 'opacity:0.55;' : '' }}">
             <td>{{ r.id }}</td>
+            <td>
+                {% if r.isEnabled %}
+                    <span class="badge badge-int">on</span>
+                {% else %}
+                    <span class="badge">off</span>
+                {% endif %}
+            </td>
             <td><code>{{ r.fromDomain }}</code></td>
             <td>{{ r.language ?: 'any' }}</td>
             <td>{{ r.mailboxType ?: 'any' }}</td>
@@ -32,8 +39,19 @@
             </td>
             <td>{{ templates_map[r.templateId].name|default('— template missing —') }}</td>
             <td>{{ r.priority }}</td>
+            <td>
+                {% if r.validFrom or r.validUntil %}
+                    <span class="muted" style="font-size:12px;">{{ r.validFrom ?: '…' }} → {{ r.validUntil ?: '…' }}</span>
+                {% else %}
+                    —
+                {% endif %}
+            </td>
             <td>{{ r.isFallback ? 'yes' : '' }}</td>
             <td class="actions">
+                <form method="post" action="/portal/tenants/{{ tenant.id }}/rules/{{ r.id }}/toggle" class="inline">
+                    <input type="hidden" name="_csrf" value="{{ csrf_token }}">
+                    <button type="submit" class="link-button">{{ r.isEnabled ? 'Disable' : 'Enable' }}</button>
+                </form>
                 <a href="/portal/tenants/{{ tenant.id }}/rules/{{ r.id }}/edit">Edit</a>
                 <form method="post" action="/portal/tenants/{{ tenant.id }}/rules/{{ r.id }}/delete" class="inline"
                       onsubmit="return confirm('Delete this rule?')">

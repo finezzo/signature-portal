@@ -24,5 +24,14 @@
 
         <button type="submit" class="btn btn-primary">Sign in</button>
     </form>
+
+    {% if sso_tenants is not empty %}
+        <div class="login-sep">or</div>
+        {% for t in sso_tenants %}
+            <a href="/portal/sso/{{ t.slug }}/start" class="btn btn-secondary btn-block">
+                Sign in with Microsoft — {{ t.name }}
+            </a>
+        {% endfor %}
+    {% endif %}
 </div>
 {% endblock %}

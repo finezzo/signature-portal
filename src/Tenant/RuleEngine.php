@@ -46,6 +46,16 @@ final class RuleEngine
     /** @return array{0:bool, 1:string} */
     private function matches(Rule $r, RuleContext $ctx): array
     {
+        if (!$r->isEnabled) {
+            return [false, 'rule is disabled'];
+        }
+        $today = date('Y-m-d');
+        if ($r->validFrom !== null && $today < $r->validFrom) {
+            return [false, "rule is not yet valid (starts {$r->validFrom})"];
+        }
+        if ($r->validUntil !== null && $today > $r->validUntil) {
+            return [false, "rule has expired (ended {$r->validUntil})"];
+        }
         if ($ctx->fromDomain() !== mb_strtolower($r->fromDomain)) {
             return [false, "from_domain does not match ({$ctx->fromDomain()} vs {$r->fromDomain})"];
         }

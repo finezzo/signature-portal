@@ -1,0 +1,65 @@
+{% extends "portal/layout.twig" %}
+{% block title %}Users — SignaturePortal{% endblock %}
+
+{% block content %}
+<div class="page-header">
+    <h2>Users</h2>
+    <a class="btn btn-primary" href="/portal/users/new">Add user</a>
+</div>
+
+<p class="muted" style="font-size:13px;">Portal users — local password or Entra SSO. Only superadmins can manage them.</p>
+
+<table class="data-table">
+    <thead><tr>
+        <th>Email</th><th>Name</th><th>Role</th><th>Tenant</th><th>Auth</th><th>Last login</th><th>Status</th><th></th>
+    </tr></thead>
+    <tbody>
+    {% for u in users %}
+        <tr>
+            <td><code>{{ u.email }}</code></td>
+            <td>{{ u.name ?: '—' }}</td>
+            <td>{{ u.role }}</td>
+            <td>
+                {% if u.tenant_id %}
+                    {% set t = tenants_by_id[u.tenant_id] %}
+                    {{ t ? t.name : '#' ~ u.tenant_id }}
+                {% else %}
+                    <span class="muted">— global —</span>
+                {% endif %}
+            </td>
+            <td>
+                {% if u.auth_provider == 'entra' %}
+                    <span class="badge badge-int">Entra SSO</span>
+                {% else %}
+                    <span class="badge">local</span>
+                {% endif %}
+            </td>
+            <td class="muted">{{ u.last_login_at ?: 'never' }}</td>
+            <td>
+                {% if u.locked_until and u.locked_until > 'now'|date('Y-m-d H:i:s') %}
+                    <span class="badge badge-ext">locked</span>
+                {% else %}
+                    <span class="badge badge-int">active</span>
+                {% endif %}
+            </td>
+            <td class="actions">
+                {% if u.locked_until and u.locked_until > 'now'|date('Y-m-d H:i:s') %}
+                    <form method="post" action="/portal/users/{{ u.id }}/unlock" class="inline">
+                        <input type="hidden" name="_csrf" value="{{ csrf_token }}">
+                        <button type="submit" class="link-button">Unlock</button>
+                    </form>
+                {% endif %}
+                <a href="/portal/users/{{ u.id }}/edit">Edit</a>
+                {% if u.id != current_user.id %}
+                    <form method="post" action="/portal/users/{{ u.id }}/delete" class="inline"
+                          onsubmit="return confirm('Delete this user? This cannot be undone.')">
+                        <input type="hidden" name="_csrf" value="{{ csrf_token }}">
+                        <button type="submit" class="link-button">Delete</button>
+                    </form>
+                {% endif %}
+            </td>
+        </tr>
+    {% endfor %}
+    </tbody>
+</table>
+{% endblock %}

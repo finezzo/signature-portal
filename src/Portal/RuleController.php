@@ -3,6 +3,7 @@ declare(strict_types=1);
 
 namespace App\Portal;
 
+use App\Audit\AuditLogger;
 use App\Auth\SessionManager;
 use App\Tenant\Rule;
 use App\Tenant\RuleRepository;
@@ -21,6 +22,7 @@ final class RuleController
         private readonly TemplateRepository $templates,
         private readonly RuleRepository $rules,
         private readonly SessionManager $session,
+        private readonly AuditLogger $audit,
     ) {}
 
     public function index(ServerRequestInterface $request, ResponseInterface $response, array $args): ResponseInterface
@@ -68,7 +70,7 @@ final class RuleController
             ]);
         }
 
-        $this->rules->create(
+        $newId = $this->rules->create(
             $tenant->id,
             (int) $form['template_id'],
             $form['from_domain'],
@@ -77,8 +79,12 @@ final class RuleController
             $form['recipient_scope'],
             (int) $form['priority'],
             (bool) ($form['is_fallback'] ?? false),
+            (bool) ($form['is_enabled'] ?? true),
+            $form['valid_from']  !== '' ? $form['valid_from']  : null,
+            $form['valid_until'] !== '' ? $form['valid_until'] : null,
         );
 
+        $this->audit->record($tenant->id, 'rule.created', 'rule', $newId, "Rule for {$form['from_domain']} created");
         $this->session->flash('success', 'Rule created.');
         return $response->withHeader('Location', "/portal/tenants/{$tenant->id}/rules")->withStatus(302);
     }
@@ -102,6 +108,9 @@ final class RuleController
                 'recipient_scope' => $rule->recipientScope,
                 'priority'        => (string) $rule->priority,
                 'is_fallback'     => $rule->isFallback,
+                'is_enabled'      => $rule->isEnabled,
+                'valid_from'      => $rule->validFrom  ?? '',
+                'valid_until'     => $rule->validUntil ?? '',
             ],
             'errors'    => [],
         ]);
@@ -134,8 +143,12 @@ final class RuleController
             $form['recipient_scope'],
             (int) $form['priority'],
             (bool) ($form['is_fallback'] ?? false),
+            (bool) ($form['is_enabled'] ?? true),
+            $form['valid_from']  !== '' ? $form['valid_from']  : null,
+            $form['valid_until'] !== '' ? $form['valid_until'] : null,
         );
 
+        $this->audit->record($tenant->id, 'rule.updated', 'rule', $rule->id, "Rule for {$form['from_domain']} saved");
         $this->session->flash('success', 'Rule saved.');
         return $response->withHeader('Location', "/portal/tenants/{$tenant->id}/rules")->withStatus(302);
     }
@@ -145,6 +158,7 @@ final class RuleController
         [$tenant, $err] = $this->resolveTenant($request, $args);
         if ($err) return $err;
         $this->rules->delete((int) $args['rid'], $tenant->id);
+        $this->audit->record($tenant->id, 'rule.deleted', 'rule', (int) $args['rid'], 'Rule deleted');
         $this->session->flash('success', 'Rule deleted.');
         return $response->withHeader('Location', "/portal/tenants/{$tenant->id}/rules")->withStatus(302);
     }
@@ -186,7 +200,29 @@ final class RuleController
             'recipient_scope' => (string) ($body['recipient_scope'] ?? Rule::SCOPE_ALL),
             'priority'        => (string) ($body['priority'] ?? '100'),
             'is_fallback'     => isset($body['is_fallback']),
+            'is_enabled'      => isset($body['is_enabled']),
+            'valid_from'      => trim((string) ($body['valid_from']  ?? '')),
+            'valid_until'     => trim((string) ($body['valid_until'] ?? '')),
         ];
+    }
+
+    public function toggle(ServerRequestInterface $request, ResponseInterface $response, array $args): ResponseInterface
+    {
+        [$tenant, $err] = $this->resolveTenant($request, $args);
+        if ($err) return $err;
+        $rule = $this->rules->find((int) $args['rid'], $tenant->id);
+        if ($rule === null) return $this->notFound($response);
+
+        $this->rules->setEnabled($rule->id, $tenant->id, !$rule->isEnabled);
+        $this->audit->record(
+            $tenant->id,
+            $rule->isEnabled ? 'rule.disabled' : 'rule.enabled',
+            'rule',
+            $rule->id,
+            $rule->isEnabled ? 'Rule disabled' : 'Rule enabled',
+        );
+        $this->session->flash('success', $rule->isEnabled ? 'Rule disabled.' : 'Rule enabled.');
+        return $response->withHeader('Location', "/portal/tenants/{$tenant->id}/rules")->withStatus(302);
     }
 
     /** @param array<string,mixed> $form */
@@ -210,6 +246,15 @@ final class RuleController
         if (!ctype_digit((string) $form['priority'])) {
             $errors[] = 'Priority must be a non-negative integer.';
         }
+        foreach (['valid_from', 'valid_until'] as $f) {
+            if ($form[$f] !== '' && \DateTimeImmutable::createFromFormat('Y-m-d', $form[$f]) === false) {
+                $errors[] = ucfirst(str_replace('_', ' ', $f)) . ' must be in YYYY-MM-DD format or empty.';
+            }
+        }
+        if ($form['valid_from'] !== '' && $form['valid_until'] !== ''
+            && $form['valid_from'] > $form['valid_until']) {
+            $errors[] = 'Valid-from must be on or before valid-until.';
+        }
         return $errors;
     }
 
@@ -223,6 +268,9 @@ final class RuleController
             'recipient_scope' => Rule::SCOPE_ALL,
             'priority'        => '100',
             'is_fallback'     => false,
+            'is_enabled'      => true,
+            'valid_from'      => '',
+            'valid_until'     => '',
         ];
     }
 

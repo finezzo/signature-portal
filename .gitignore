@@ -7,6 +7,20 @@
 !/var/cache/.gitkeep
 !/var/log/.gitkeep
 
+# Per-tenant uploaded images (runtime data, not project source)
+/public/assets/tenants/*
+!/public/assets/tenants/.gitkeep
+
+# Production-unsafe debug helpers (created by the installer/troubleshooting,
+# never to be committed — display_errors=On exposes stacktraces, the debug
+# index.php prints internals on every request)
+/public/.user.ini
+/public/index.debug.php
+
+# Pasted reference / sample files used while iterating
+/Signatur_*.htm
+/manifest*.xml
+
 # Composer lockfile is committed; keep vendor too (IONOS shared hosting has no shell)
 # /vendor/  ← intentionally NOT ignored
 

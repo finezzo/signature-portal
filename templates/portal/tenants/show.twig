@@ -12,9 +12,17 @@
             <dt>Slug</dt>      <dd><code>{{ tenant.slug }}</code></dd>
             <dt>Domains</dt>   <dd>{{ tenant.emailDomains|join(', ') ?: '—' }}</dd>
             <dt>Manifest GUID</dt><dd><code>{{ tenant.manifestGuid ?: '—' }}</code></dd>
+            <dt>SSO</dt>       <dd>{% if tenant.ssoEnabled %}enabled ({{ tenant.ssoAutoProvision ? 'auto-provision on' : 'auto-provision off' }}){% else %}disabled{% endif %}</dd>
             <dt>Created</dt>   <dd>{{ tenant.createdAt }}</dd>
             <dt>Updated</dt>   <dd>{{ tenant.updatedAt }}</dd>
         </dl>
+
+        <h2 style="margin-top:32px;">Entra SSO redirect URI</h2>
+        <p class="muted" style="font-size:13px;">
+            Add this URI to the Entra app registration's <strong>Authentication → Web → Redirect URIs</strong>
+            so Microsoft will accept the SSO callback.
+        </p>
+        <code class="copybox">{{ sso_redirect_uri }}</code>
     </div>
 
     <div class="card">

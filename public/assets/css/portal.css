@@ -225,3 +225,34 @@ select {
     width: 100%; padding: 9px 12px; border: 1px solid var(--border);
     border-radius: 6px; font: inherit; background: #fff;
 }
+
+/* Inline checkboxes (settings toggles) */
+label.check-inline {
+    display: flex; align-items: center; gap: 8px;
+    margin: 12px 0 4px; font-weight: 500;
+}
+label.check-inline input { width: auto; margin: 0; }
+
+/* Secondary buttons (SSO links on the login page) */
+.btn-secondary { background: #fff; color: var(--text); border-color: var(--border); }
+.btn-secondary:hover { background: #f6f7f9; }
+.btn-block { display: block; width: 100%; text-align: center; }
+
+/* Login divider between local and SSO */
+.login-sep {
+    display: flex; align-items: center; gap: 12px;
+    color: var(--muted); font-size: 12px; text-transform: uppercase;
+    letter-spacing: 0.08em;
+    margin: 24px 0 12px;
+}
+.login-sep::before, .login-sep::after {
+    content: ""; flex: 1; height: 1px; background: var(--border);
+}
+
+/* Copyable single-line value (redirect URI on tenant page) */
+.copybox {
+    display: block; padding: 8px 12px; background: #f6f7f9;
+    border: 1px solid var(--border); border-radius: 6px;
+    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    font-size: 13px; word-break: break-all;
+}

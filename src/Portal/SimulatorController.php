@@ -3,11 +3,15 @@ declare(strict_types=1);
 
 namespace App\Portal;
 
+use App\Graph\GraphClient;
+use App\Graph\GraphException;
+use App\Tenant\DisplayEmailDeriver;
 use App\Tenant\RuleContext;
 use App\Tenant\RuleEngine;
 use App\Tenant\TemplateRenderer;
 use App\Tenant\TemplateRepository;
 use App\Tenant\TenantRepository;
+use App\Tenant\UserOverrideRepository;
 use Psr\Http\Message\ResponseInterface;
 use Psr\Http\Message\ServerRequestInterface;
 use Slim\Psr7\Factory\ResponseFactory;
@@ -28,6 +32,9 @@ final class SimulatorController
         private readonly TemplateRepository $templates,
         private readonly RuleEngine $engine,
         private readonly TemplateRenderer $renderer,
+        private readonly GraphClient $graph,
+        private readonly DisplayEmailDeriver $displayEmail,
+        private readonly UserOverrideRepository $overrides,
     ) {}
 
     public function show(ServerRequestInterface $request, ResponseInterface $response, array $args): ResponseInterface
@@ -49,10 +56,12 @@ final class SimulatorController
 
         $body = (array) $request->getParsedBody();
         $form = [
-            'from_email'   => trim((string) ($body['from_email'] ?? '')),
-            'recipients'   => (string) ($body['recipients'] ?? ''),
-            'language'     => trim((string) ($body['language'] ?? '')),
-            'mailbox_type' => (string) ($body['mailbox_type'] ?? ''),
+            'from_email'    => trim((string) ($body['from_email'] ?? '')),
+            'primary_email' => trim((string) ($body['primary_email'] ?? '')),
+            'recipients'    => (string) ($body['recipients'] ?? ''),
+            'language'      => trim((string) ($body['language'] ?? '')),
+            'mailbox_type'  => (string) ($body['mailbox_type'] ?? ''),
+            'use_live_data' => !empty($body['use_live_data']),
         ];
 
         $recipients = array_values(array_filter(array_map(
@@ -60,21 +69,90 @@ final class SimulatorController
             preg_split('/[\s,;]+/', $form['recipients']) ?: []
         )));
 
+        // If "Use live Graph data" is set, fetch the actual user profile from
+        // Graph and derive language/mailbox-type/email-token from it just
+        // like SignatureService would. Falls back to whatever the form
+        // overrode, like the live pipeline does.
+        $tokens         = TemplateRenderer::sampleTokens();
+        $tokenSource    = 'sample';
+        $liveEmailToken = null;
+        $isSharedFrom   = false;
+        $graphError     = null;
+        $resolvedLang   = $form['language'] !== '' ? $form['language'] : null;
+        $resolvedMtype  = $form['mailbox_type'] !== '' ? $form['mailbox_type'] : null;
+
+        if ($form['use_live_data'] && $form['from_email'] !== '') {
+            try {
+                $fromProfile  = $this->graph->getUserProfile($tenant, $form['from_email']);
+                $isSharedFrom = $fromProfile === null || $fromProfile->looksLikeSharedMailbox();
+
+                if (!$isSharedFrom) {
+                    $profile = $fromProfile;
+                } else {
+                    $primary = $form['primary_email'] !== '' ? $form['primary_email'] : $form['from_email'];
+                    $profile = $primary !== $form['from_email']
+                        ? $this->graph->getUserProfile($tenant, $primary)
+                        : null;
+                    if ($profile === null) {
+                        // Couldn't fully resolve — use whatever shape we have
+                        // so the simulator still shows something useful.
+                        $profile = $fromProfile;
+                    }
+                }
+
+                if ($profile !== null) {
+                    $liveEmailToken = $isSharedFrom
+                        ? $this->displayEmail->deriveForSharedMailbox(
+                              $profile,
+                              $form['from_email'],
+                              $tenant->sharedDisplayMode,
+                          )
+                        : ($profile->mail ?? $profile->userPrincipalName);
+                    $tokens      = TemplateRenderer::tokensFromProfile($profile, $liveEmailToken);
+                    $tokenSource = 'graph';
+                    if ($form['language'] === '') {
+                        $resolvedLang = $profile->shortLanguage();
+                    }
+                    if ($form['mailbox_type'] === '') {
+                        $resolvedMtype = $isSharedFrom ? 'shared' : 'personal';
+                    }
+                }
+            } catch (GraphException $e) {
+                $graphError  = $e->getMessage();
+            }
+        }
+
         $ctx = new RuleContext(
             $form['from_email'],
-            $form['language'] !== '' ? $form['language'] : null,
-            $form['mailbox_type'] !== '' ? $form['mailbox_type'] : null,
+            $resolvedLang,
+            $resolvedMtype,
             $recipients,
             $tenant->emailDomains,
         );
 
+        // Per-user override check first (mirrors SignatureService).
+        $overrideKey = $form['primary_email'] !== '' ? $form['primary_email'] : $form['from_email'];
+        $override    = $overrideKey !== ''
+            ? $this->overrides->findByEmail($tenant->id, $overrideKey)
+            : null;
+
         $explain  = $this->engine->explain($tenant->id, $ctx);
-        $rule     = $explain['rule'];
-        $template = $rule !== null ? $this->templates->find($rule->templateId, $tenant->id) : null;
+        $rule     = null;
+        $template = null;
+
+        if ($override !== null) {
+            $template = $this->templates->find($override->templateId, $tenant->id);
+        } else {
+            $rule     = $explain['rule'];
+            $template = $rule !== null ? $this->templates->find($rule->templateId, $tenant->id) : null;
+        }
 
         $rendered = null;
         if ($template !== null) {
-            $rendered = $this->renderer->render($template->html, TemplateRenderer::sampleTokens());
+            $rendered = $this->renderer->render($template->html, $tokens);
+            if ($tenant->disclaimerHtml !== null && trim($tenant->disclaimerHtml) !== '') {
+                $rendered .= $this->renderer->render($tenant->disclaimerHtml, $tokens);
+            }
         }
 
         return $this->view->render($response, 'portal/simulator.twig', [
@@ -84,9 +162,14 @@ final class SimulatorController
                 'context'       => $ctx,
                 'recipients'    => $recipients,
                 'rule'          => $rule,
+                'override'      => $override,
                 'template'      => $template,
                 'rendered_html' => $rendered,
                 'reasons'       => $explain['reasons'],
+                'token_source'  => $tokenSource,
+                'is_shared'     => $isSharedFrom,
+                'live_email'    => $liveEmailToken,
+                'graph_error'   => $graphError,
             ],
         ]);
     }
@@ -114,10 +197,12 @@ final class SimulatorController
     {
         $primary = $tenant->emailDomains[0] ?? 'example.com';
         return [
-            'from_email'   => "anna.beispiel@{$primary}",
-            'recipients'   => "kunde@kunden-firma.de",
-            'language'     => 'de',
-            'mailbox_type' => 'personal',
+            'from_email'    => "anna.beispiel@{$primary}",
+            'primary_email' => '',
+            'recipients'    => "kunde@kunden-firma.de",
+            'language'      => 'de',
+            'mailbox_type'  => 'personal',
+            'use_live_data' => false,
         ];
     }
 }

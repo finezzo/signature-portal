@@ -15,7 +15,10 @@
             <nav class="topbar-nav">
                 <a href="/portal/dashboard">Dashboard</a>
                 <a href="/portal/tenants">Tenants</a>
-                <span class="user">{{ current_user.email }}</span>
+                {% if current_user.role == 'superadmin' %}
+                    <a href="/portal/users">Users</a>
+                {% endif %}
+                <a href="/portal/account" title="My account">{{ current_user.name|default(current_user.email) }}</a>
                 <form method="post" action="/portal/logout" class="inline">
                     <input type="hidden" name="_csrf" value="{{ csrf_token }}">
                     <button type="submit" class="link-button">Sign out</button>

@@ -1,0 +1,45 @@
+{% extends "portal/layout.twig" %}
+{% block title %}Overrides — {{ tenant.name }}{% endblock %}
+
+{% block sub_nav %}{% include 'portal/_tenant_nav.twig' with {'tenant': tenant, 'active': 'overrides'} %}{% endblock %}
+
+{% block content %}
+<div class="page-header">
+    <h2>User overrides</h2>
+    <a class="btn btn-primary" href="/portal/tenants/{{ tenant.id }}/overrides/new">Add override</a>
+</div>
+
+<p class="muted" style="font-size:13px;">
+    Specific users whose signature should bypass the rule engine. Match is by primary email — if the address
+    here equals <code>?primary=</code> from the add-in, the chosen template wins regardless of any rule.
+    Useful for "the boss wants their own signature" exceptions.
+</p>
+
+{% if overrides is empty %}
+    <p class="muted">No overrides yet.</p>
+{% else %}
+<table class="data-table">
+    <thead><tr>
+        <th>Email</th><th>Template</th><th>Note</th><th>Added</th><th></th>
+    </tr></thead>
+    <tbody>
+    {% for o in overrides %}
+        <tr>
+            <td><code>{{ o.email }}</code></td>
+            <td>{{ templates_map[o.templateId].name|default('— template missing —') }}</td>
+            <td class="muted">{{ o.note ?: '' }}</td>
+            <td class="muted">{{ o.createdAt }}</td>
+            <td class="actions">
+                <a href="/portal/tenants/{{ tenant.id }}/overrides/{{ o.id }}/edit">Edit</a>
+                <form method="post" action="/portal/tenants/{{ tenant.id }}/overrides/{{ o.id }}/delete" class="inline"
+                      onsubmit="return confirm('Delete this override?')">
+                    <input type="hidden" name="_csrf" value="{{ csrf_token }}">
+                    <button type="submit" class="link-button">Delete</button>
+                </form>
+            </td>
+        </tr>
+    {% endfor %}
+    </tbody>
+</table>
+{% endif %}
+{% endblock %}

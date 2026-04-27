@@ -1,0 +1,54 @@
+{% extends "portal/layout.twig" %}
+{% block title %}My account — SignaturePortal{% endblock %}
+
+{% block content %}
+<h2>My account</h2>
+
+{% if errors %}
+    <div class="alert alert-error">
+        <ul style="margin:0;padding-left:18px;">
+            {% for e in errors %}<li>{{ e }}</li>{% endfor %}
+        </ul>
+    </div>
+{% endif %}
+
+<div class="card" style="max-width:560px;">
+    <form method="post" action="/portal/account" autocomplete="off">
+        <input type="hidden" name="_csrf" value="{{ csrf_token }}">
+
+        <h3 style="margin-top:0;">Profile</h3>
+
+        <label>Email</label>
+        <input type="email" value="{{ account.email }}" disabled>
+        <div class="muted" style="font-size:13px;">Set at install or by an administrator. Not user-changeable.</div>
+
+        <label>Role</label>
+        <input type="text" value="{{ account.role }}" disabled>
+
+        <label for="name">Display name</label>
+        <input id="name" name="name" type="text" value="{{ form.name }}" maxlength="255" placeholder="Your name (optional)">
+
+        {% if account.password_hash %}
+        <h3 style="margin-top:32px;">Change password</h3>
+        <p class="muted" style="font-size:13px;">Leave blank if you don't want to change your password.</p>
+
+        <label for="current_password">Current password</label>
+        <input id="current_password" name="current_password" type="password" autocomplete="current-password">
+
+        <label for="new_password">New password (min 10 chars)</label>
+        <input id="new_password" name="new_password" type="password" autocomplete="new-password">
+
+        <label for="new_password_confirm">Confirm new password</label>
+        <input id="new_password_confirm" name="new_password_confirm" type="password" autocomplete="new-password">
+        {% else %}
+        <h3 style="margin-top:32px;">Sign-in method</h3>
+        <p class="muted" style="font-size:13px;">
+            This account signs in via Microsoft Entra (SSO). To change your password,
+            use the Microsoft account settings — there's no local password to set here.
+        </p>
+        {% endif %}
+
+        <button type="submit" class="btn btn-primary" style="margin-top:20px;">Save changes</button>
+    </form>
+</div>
+{% endblock %}

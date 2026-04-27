@@ -60,6 +60,11 @@ final class TenantRepository
         ?string $entraTenantId,
         ?string $entraClientId,
         ?string $entraClientSecretEncrypted,
+        bool $ssoEnabled,
+        bool $ssoAutoProvision,
+        string $ssoDefaultRole,
+        string $sharedDisplayMode,
+        ?string $disclaimerHtml,
     ): void {
         $stmt = $this->pdo->prepare(
             'UPDATE tenants
@@ -67,7 +72,12 @@ final class TenantRepository
                  email_domains = :domains,
                  entra_tenant_id = :etid,
                  entra_client_id = :ecid,
-                 entra_client_secret_encrypted = COALESCE(:esec, entra_client_secret_encrypted)
+                 entra_client_secret_encrypted = COALESCE(:esec, entra_client_secret_encrypted),
+                 sso_enabled = :sso,
+                 sso_auto_provision = :prov,
+                 sso_default_role = :role,
+                 shared_display_mode = :sdmode,
+                 disclaimer_html = :disc
              WHERE id = :id'
         );
         $stmt->execute([
@@ -78,6 +88,11 @@ final class TenantRepository
             ':ecid'    => $entraClientId,
             ':esec'    => $entraClientSecretEncrypted,
             // null on :esec → leave the existing encrypted secret untouched.
+            ':sso'     => $ssoEnabled ? 1 : 0,
+            ':prov'    => $ssoAutoProvision ? 1 : 0,
+            ':role'    => $ssoDefaultRole,
+            ':sdmode'  => $sharedDisplayMode,
+            ':disc'    => $disclaimerHtml,
         ]);
     }
 
@@ -86,10 +101,17 @@ final class TenantRepository
         $stmt = $this->pdo->prepare(
             'UPDATE tenants
              SET api_key_encrypted = :k,
-                 api_key_last_rotated_at = NOW()
+                 api_key_last_rotated_at = NOW(),
+                 api_key_acknowledged_at = NULL
              WHERE id = :id'
         );
         $stmt->execute([':id' => $id, ':k' => $apiKeyEncrypted]);
+    }
+
+    public function acknowledgeApiKey(int $id): void
+    {
+        $this->pdo->prepare('UPDATE tenants SET api_key_acknowledged_at = NOW() WHERE id = :id')
+            ->execute([':id' => $id]);
     }
 
     public function delete(int $id): void

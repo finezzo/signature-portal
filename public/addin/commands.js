@@ -39,15 +39,11 @@
 
     Office.onReady(function () {
         if (Office.actions && Office.actions.associate) {
-            Office.actions.associate("onMessageCompose",     onMessageCompose);
-            Office.actions.associate("onFromChange",         onFromChange);
-            Office.actions.associate("onRecipientsChange",   onRecipientsChange);
+            Office.actions.associate("onNewMessageComposeHandler", onNewMessageComposeHandler);
         }
     });
 
-    function onMessageCompose(event)     { runWithSignature(event); }
-    function onFromChange(event)         { runWithSignature(event); }
-    function onRecipientsChange(event)   { runWithSignature(event); }
+    function onNewMessageComposeHandler(event) { runWithSignature(event); }
 
     function runWithSignature(event) {
         if (!TENANT || !API_KEY) {

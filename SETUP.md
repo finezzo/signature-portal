@@ -213,8 +213,19 @@ This is Phase 3 work (Graph integration). Phase 2 stops at the rule engine; the 
 #### Portal authentication
 
 - **Local**: `users` table, bcrypt password hash, PHP file-backed sessions. Users can be tenant-scoped or global (`role = superadmin`).
-- **Entra SSO** (Phase 3): per-tenant Azure app registration; OIDC code flow via `league/oauth2-client` (Azure provider). The returned email is matched to a portal user; auto-provisioning is configurable per tenant.
+- **Entra SSO**: per-tenant Azure app registration; OIDC v2.0 code flow via `thenetworg/oauth2-azure`. Implemented in [src/Auth/EntraProvider.php](src/Auth/EntraProvider.php) (provider factory) and [src/Auth/SsoAuthenticator.php](src/Auth/SsoAuthenticator.php) (user matching + provisioning). Reuses the same Entra credentials configured for Microsoft Graph — admins register one app per tenant. Match precedence: `entra_object_id` (the stable `oid` claim) → email → auto-provision (if enabled). When a local user signs in via SSO for the first time their `oid` is linked to the existing record.
 - Both paths converge on the same session model. RBAC roles: `superadmin` (cross-tenant), `tenant_admin`, `tenant_editor`. Implemented in [src/Portal/AccessControl.php](src/Portal/AccessControl.php).
+
+#### Configuring Entra SSO for a tenant
+
+1. In Azure portal, open the existing app registration the tenant already uses for Graph (or create one — see "Microsoft Graph" in this doc).
+2. Open the tenant in the portal (**Tenants → … → Settings → overview**). Copy the **SSO redirect URI** shown on the page.
+3. In Azure → app registration → **Authentication** → **Add platform → Web** → paste the redirect URI. Tick **ID tokens** under "Implicit grant and hybrid flows" — the v2.0 endpoint needs it for OIDC. Save.
+4. In Azure → app registration → **API permissions**, ensure `openid`, `profile`, `email` are granted (delegated). These are typically auto-included; add them explicitly if missing.
+5. Back in the portal, edit the tenant: tick **Enable Entra SSO**. Decide whether to **auto-provision** unknown sign-ins; if so, pick a default role.
+6. The login page will now show a **Sign in with Microsoft — *Tenant Name*** button beneath the email/password form.
+
+If Microsoft rejects the redirect with `AADSTS50011: redirect URI mismatch`, the URI in Azure does not exactly match the one shown on the tenant page (port, scheme, trailing slash all matter).
 
 #### CSRF and the API endpoint
 
@@ -297,8 +308,8 @@ This document reflects the state after Phase 2.
 
 - **Phase 1** (done): Docker dev stack, web installer, schema, local auth, base portal layout, dashboard.
 - **Phase 2** (done): Tenant / Template / Rule CRUD, HTML Purifier, recipient-scope filter, simulator with decision trace, manifest XML generator.
-- **Phase 3** (next): the live `/api/sig` endpoint, Microsoft Graph profile lookup with token caching, the actual add-in JS (`commands.html` / `taskpane.html`), shared-mailbox primary-user fallback.
-- **Phase 4** (later): Entra SSO for portal admins, branding (logo / accent colour) per tenant, template version history with rollback, OWA-specific deployment notes.
+- **Phase 3** (done, untested in Outlook): the live `/api/sig` endpoint, Microsoft Graph profile lookup with token caching, the add-in JS (`commands.html` / `taskpane.html`) wired to `OnNewMessageCompose` / `OnMessageFromChange` / `OnMessageRecipientsChange`, shared-mailbox primary-user fallback.
+- **Phase 4** (in progress): Entra SSO for portal admins (done — see "Configuring Entra SSO" above). Still open: branding (logo / accent colour) per tenant, template version history with rollback, OWA-specific deployment notes.
 
 ### Local-development quirks worth knowing
 

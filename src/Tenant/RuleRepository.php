@@ -44,11 +44,14 @@ final class RuleRepository
         string $recipientScope,
         int $priority,
         bool $isFallback,
+        bool $isEnabled = true,
+        ?string $validFrom = null,
+        ?string $validUntil = null,
     ): int {
         $stmt = $this->pdo->prepare(
             'INSERT INTO rules
-                (tenant_id, template_id, from_domain, language, mailbox_type, recipient_scope, priority, is_fallback)
-             VALUES (:tid, :pid, :dom, :lang, :mtype, :scope, :prio, :fb)'
+                (tenant_id, template_id, from_domain, language, mailbox_type, recipient_scope, priority, is_fallback, is_enabled, valid_from, valid_until)
+             VALUES (:tid, :pid, :dom, :lang, :mtype, :scope, :prio, :fb, :en, :vf, :vu)'
         );
         $stmt->execute([
             ':tid'   => $tenantId,
@@ -59,6 +62,9 @@ final class RuleRepository
             ':scope' => $recipientScope,
             ':prio'  => $priority,
             ':fb'    => $isFallback ? 1 : 0,
+            ':en'    => $isEnabled ? 1 : 0,
+            ':vf'    => $validFrom,
+            ':vu'    => $validUntil,
         ]);
         return (int) $this->pdo->lastInsertId();
     }
@@ -73,6 +79,9 @@ final class RuleRepository
         string $recipientScope,
         int $priority,
         bool $isFallback,
+        bool $isEnabled,
+        ?string $validFrom,
+        ?string $validUntil,
     ): void {
         $stmt = $this->pdo->prepare(
             'UPDATE rules SET
@@ -82,7 +91,10 @@ final class RuleRepository
                 mailbox_type    = :mtype,
                 recipient_scope = :scope,
                 priority        = :prio,
-                is_fallback     = :fb
+                is_fallback     = :fb,
+                is_enabled      = :en,
+                valid_from      = :vf,
+                valid_until     = :vu
              WHERE id = :id AND tenant_id = :tid'
         );
         $stmt->execute([
@@ -95,7 +107,16 @@ final class RuleRepository
             ':scope' => $recipientScope,
             ':prio'  => $priority,
             ':fb'    => $isFallback ? 1 : 0,
+            ':en'    => $isEnabled ? 1 : 0,
+            ':vf'    => $validFrom,
+            ':vu'    => $validUntil,
         ]);
+    }
+
+    public function setEnabled(int $id, int $tenantId, bool $enabled): void
+    {
+        $this->pdo->prepare('UPDATE rules SET is_enabled = :en WHERE id = :id AND tenant_id = :tid')
+            ->execute([':id' => $id, ':tid' => $tenantId, ':en' => $enabled ? 1 : 0]);
     }
 
     public function delete(int $id, int $tenantId): void

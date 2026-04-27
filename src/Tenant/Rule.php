@@ -19,6 +19,9 @@ final class Rule
         public readonly string $recipientScope, // 'all' | 'external' | 'internal'
         public readonly int $priority,
         public readonly bool $isFallback,
+        public readonly bool $isEnabled,
+        public readonly ?string $validFrom,
+        public readonly ?string $validUntil,
         public readonly string $createdAt,
     ) {}
 
@@ -35,6 +38,9 @@ final class Rule
             (string) $row['recipient_scope'],
             (int) $row['priority'],
             (bool) ((int) $row['is_fallback']),
+            (bool) ((int) ($row['is_enabled'] ?? 1)),
+            isset($row['valid_from'])  && $row['valid_from']  !== null ? (string) $row['valid_from']  : null,
+            isset($row['valid_until']) && $row['valid_until'] !== null ? (string) $row['valid_until'] : null,
             (string) $row['created_at'],
         );
     }

@@ -1,16 +1,22 @@
-# Front controller — route everything that's not a real file/dir to index.php
-RewriteEngine On
+# Block directory listings — protects /assets/tenants/<slug>/ from being browsable.
+Options -Indexes
 
-# Allow direct access to the installer while config/config.php does not exist.
-RewriteRule ^install\.php$ - [L]
+# Front controller — route everything that's not a real file/dir to index.php.
+<IfModule mod_rewrite.c>
+    RewriteEngine On
+    RewriteBase /
 
-# Static files and directories pass through.
-RewriteCond %{REQUEST_FILENAME} -f [OR]
-RewriteCond %{REQUEST_FILENAME} -d
-RewriteRule ^ - [L]
+    # Allow direct access to the installer while config/config.php does not exist.
+    RewriteRule ^install\.php$ - [L]
 
-# Everything else → front controller.
-RewriteRule ^ index.php [QSA,L]
+    # Static files and directories pass through.
+    RewriteCond %{REQUEST_FILENAME} -f [OR]
+    RewriteCond %{REQUEST_FILENAME} -d
+    RewriteRule ^ - [L]
+
+    # Everything else → front controller.
+    RewriteRule . /index.php [L]
+</IfModule>
 
 # Hardening headers (per-tenant CSP for the portal is set in PHP).
 <IfModule mod_headers.c>

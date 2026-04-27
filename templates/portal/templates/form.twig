@@ -6,6 +6,31 @@
 {% block content %}
 <h2>{{ template ? 'Edit template' : 'New template' }}</h2>
 
+{% if not template and starters is defined and starters is not empty %}
+<div class="card" style="margin-bottom:20px;">
+    <h3 style="margin-top:0;">Start from a template</h3>
+    <p class="muted" style="font-size:13px;margin:0 0 12px 0;">
+        Pick a starter to pre-fill the editor — you can always tweak the HTML afterwards.
+        Or skip this and write your own from scratch.
+    </p>
+    <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(240px,1fr));gap:12px;">
+        {% for s in starters %}
+        <a href="?starter={{ s.id }}"
+           class="card"
+           style="display:block;padding:14px;border:1px solid var(--border);text-decoration:none;color:inherit;background:{{ selected_starter == s.id ? '#eef4ff' : '#fff' }};border-color:{{ selected_starter == s.id ? 'var(--primary)' : 'var(--border)' }};">
+            <strong style="font-size:14px;color:var(--text);">{{ s.name }}</strong>
+            <div class="muted" style="font-size:12px;margin-top:4px;">{{ s.description }}</div>
+        </a>
+        {% endfor %}
+    </div>
+    {% if selected_starter %}
+        <p class="muted" style="font-size:12px;margin-top:12px;">
+            Loaded <strong>{{ selected_starter }}</strong>. Editing the HTML below or picking another card will replace what's loaded.
+        </p>
+    {% endif %}
+</div>
+{% endif %}
+
 {% if errors %}
     <div class="alert alert-error">
         <ul style="margin:0;padding-left:18px;">
@@ -24,16 +49,39 @@
     <label for="html" style="margin-top:16px;">HTML body</label>
     <textarea id="html" name="html" rows="14">{{ form.html }}</textarea>
     <div class="muted" style="font-size:13px;margin-top:6px;">
-        Use the <strong>Token</strong> menu in the editor toolbar to insert placeholders.
-        Switch to source view (<code>&lt;/&gt;</code>) for raw HTML edits.
-        On save, HTML is sanitized via HTML Purifier.
+        <strong>Enter</strong> creates a line break (no extra spacing).
+        Use <strong>Token</strong> to insert placeholders, <strong>Conditional</strong> to wrap
+        something so it only shows when a Graph attribute is set (e.g. hide the "Mob: …" line
+        when the user has no mobile phone), <strong>Image</strong> to pick from the tenant's
+        image library, and the <strong>font-size input</strong> for any custom value (e.g.
+        <code>13px</code>, <code>10.5pt</code>). If you pasted from Word/Outlook and a line
+        looks bigger than the others despite the same toolbar value, select it and click
+        <strong>Clear formatting</strong> (the eraser icon at the end of the toolbar) — that
+        wipes Word's leftover inline styles and the toolbar value then actually applies.
+        Saved HTML is sanitized by HTML Purifier.
     </div>
 
-    <details style="margin-top:24px;">
+    <div id="draft-restore-banner" class="alert" style="display:none;margin-top:16px;background:#fff7e6;color:#92400e;border:1px solid #fcd34d;">
+        <strong>Unsaved draft found</strong> <span id="draft-age" class="muted"></span> —
+        <button type="button" id="draft-restore" class="link-button" style="font-weight:600;">Restore</button>
+        ·
+        <button type="button" id="draft-discard" class="link-button">Discard</button>
+    </div>
+
+    <details style="margin-top:24px;" open>
         <summary><strong>Live preview</strong> <span class="muted" style="font-weight:normal;">(sanitized, sample tokens)</span></summary>
-        <iframe id="preview-frame" sandbox="allow-same-origin"
-                style="width:100%;height:280px;border:1px solid var(--border);border-radius:6px;background:#fff;margin-top:8px;"></iframe>
-        <button type="button" id="refresh-preview" class="btn" style="margin-top:8px;">Refresh preview</button>
+        <div style="display:flex;gap:6px;align-items:center;margin:8px 0;flex-wrap:wrap;">
+            <button type="button" id="refresh-preview" class="btn">Refresh</button>
+            <span class="muted" style="font-size:12px;margin-left:8px;">Preview width:</span>
+            <button type="button" class="btn preview-width-btn" data-width="100%">Desktop</button>
+            <button type="button" class="btn preview-width-btn" data-width="600px">Tablet</button>
+            <button type="button" class="btn preview-width-btn" data-width="375px">Mobile</button>
+            <span id="autosave-status" class="muted" style="font-size:12px;margin-left:auto;"></span>
+        </div>
+        <div style="background:#f6f7f9;padding:12px;border-radius:6px;border:1px solid var(--border);">
+            <iframe id="preview-frame" sandbox="allow-same-origin"
+                    style="width:100%;height:320px;border:1px solid var(--border);border-radius:4px;background:#fff;display:block;margin:0 auto;transition:width 0.15s ease;"></iframe>
+        </div>
     </details>
 
     <div style="margin-top:24px;">
@@ -51,14 +99,17 @@
     const frame      = document.getElementById('preview-frame');
     const refreshBtn = document.getElementById('refresh-preview');
 
-    const TOKENS = [
-        { value: '{display_name}',   label: 'Display name' },
-        { value: '{first_name}',     label: 'First name' },
-        { value: '{last_name}',      label: 'Last name' },
-        { value: '{email}',          label: 'Email (display)' },
-        { value: '{job_title_line}', label: 'Job title' },
-        { value: '{phone_lines}',    label: 'Phone lines' },
-    ];
+    // Token catalogue is built server-side from TokenCatalog so adding fields
+    // to GraphClient + TokenCatalog automatically shows them here.
+    const TOKEN_GROUPS  = {{ token_groups|json_encode|raw }};
+    // Asset library for the in-editor image picker.
+    const TENANT_ASSETS = {{ tenant_assets|default([])|json_encode|raw }};
+    // Pre-built blocks for the Snippet menu.
+    const SNIPPETS      = {{ snippets|default([])|json_encode|raw }};
+    // JSON upload endpoint for drag-and-drop / pasted images.
+    const UPLOAD_URL    = {{ upload_url|default('')|json_encode|raw }};
+    // Auto-save key — scoped per tenant + template id (or "new" for create).
+    const DRAFT_KEY     = 'sigportal.draft.t{{ tenant.id }}.tpl{{ template.id|default('new') }}';
 
     let inflight = null;
     async function refresh(currentHtml) {
@@ -89,19 +140,137 @@
         branding: false,
         promotion: false,
         statusbar: true,
-        plugins: 'link image table lists code preview autolink searchreplace charmap visualblocks visualchars',
+        plugins: 'link image table lists code preview autolink searchreplace charmap visualblocks visualchars wordcount',
         toolbar: [
-            'undo redo | blocks fontfamily fontsize | bold italic underline forecolor backcolor',
-            'alignleft aligncenter alignright | bullist numlist outdent indent | link image | table | inserttoken | code preview removeformat',
+            'undo redo | blocks fontfamily fontsizeinput lineheight | bold italic underline forecolor backcolor',
+            'alignleft aligncenter alignright | bullist numlist outdent indent | link imagelibrary hr | inserttableoutlook table | inserttoken insertcondition insertsnippet | code preview removeformat',
         ],
+        line_height_formats: '0.8 1 1.15 1.2 1.3 1.4 1.5 1.75 2 2.5 3',
+        // Free-text font-size input default unit (works with bare numbers like "12").
+        font_size_input_default_unit: 'pt',
+        // Common signature sizes — surfaced when the input is focused.
+        font_size_formats: '8pt 9pt 10pt 10.5pt 11pt 12pt 13pt 14pt 16pt 18pt 24pt',
+        // Without clear_child_styles, applying "10pt" to a line that has
+        // a nested <span style="font-size:9pt"> just wraps another span
+        // around it; the inner span still wins and the line stays at 9pt
+        // while the dropdown reads 10pt — causing the "two identical-looking
+        // sizes look different" surprise.
+        formats: {
+            fontsize: {
+                inline: 'span',
+                styles: { 'font-size': '%value' },
+                clear_child_styles: true,
+            },
+            fontname: {
+                inline: 'span',
+                styles: { 'font-family': '%value' },
+                clear_child_styles: true,
+            },
+            forecolor: {
+                inline: 'span',
+                styles: { color: '%value' },
+                clear_child_styles: true,
+            },
+            hilitecolor: {
+                inline: 'span',
+                styles: { 'background-color': '%value' },
+                clear_child_styles: true,
+            },
+        },
+        // Editor baseline matches what most Outlook users actually see in
+        // their compose window: Calibri 11pt is Microsoft's default. A
+        // signature that "looks small" in the editor but renders fine in
+        // Outlook (or vice-versa) usually means the editor and the email
+        // client disagree on the baseline.
+        //
+        // Block elements (p, div, h*, ul, ol, blockquote) have margin 0 in
+        // the editor — Enter inserts a new block that visually looks like a
+        // line break, with NO surprise gap. Vertical spacing inside a
+        // paragraph is controlled by line-height, between paragraphs by
+        // explicit <br> or by setting margin yourself.
         content_style:
-            'body{font-family:Arial,Helvetica,sans-serif;font-size:13px;color:#333;padding:8px}' +
+            'body{font-family:Calibri,Arial,Helvetica,sans-serif;font-size:11pt;color:#333;padding:8px;line-height:1.3}' +
+            // Small bottom margin — preserves the visual paragraph break
+            // Word/Outlook users expect (otherwise pasted content looks
+            // squashed) without overshooting into "huge gap on every Enter".
+            // Empty paragraphs inherit this AND get the min-height below,
+            // so an explicit Enter-Enter blank line is bigger than a
+            // single-line break — matching word-processor expectations.
+            ' p, div, h1, h2, h3, h4, h5, h6, ul, ol, blockquote { margin: 0 0 0.35em 0 }' +
+            ' p:empty, div:empty { min-height: 1.3em }' +
             ' .sigportal-token{background:#fef3c7;color:#92400e;padding:0 4px;border-radius:3px;font-family:ui-monospace,Menlo,Consolas,monospace}',
+        // Strip Word/Outlook MSO styles on paste — they cascade weirdly and
+        // are the #1 source of "looks different than I formatted it" surprises.
+        // Also convert <p> to <div> so the body uses one block kind throughout
+        // (matters for line-height: it attaches to the current block, and
+        // <p>'s 1em-margin browser default would force visible gaps in the
+        // delivered email even though they look fine in the editor).
+        paste_preprocess: function (_plugin, args) {
+            // Remove Word conditional comments and namespaces.
+            args.content = args.content.replace(/<!--\[if[^\]]*\]>[\s\S]*?<!\[endif\]-->/g, '');
+            args.content = args.content.replace(/<\/?\w+:[^>]*>/g, '');
+            // Drop class attributes whose values start with "Mso" / "ms-".
+            args.content = args.content.replace(/\sclass="[^"]*\bMso[^"]*"/g, '');
+            // Strip mso-* properties from inline style attributes.
+            args.content = args.content.replace(/style="([^"]*)"/g, function (match, css) {
+                var cleaned = css.split(';').filter(function (decl) {
+                    var prop = decl.split(':')[0] || '';
+                    return !/^\s*mso-/i.test(prop);
+                }).join(';').trim();
+                return cleaned !== '' ? 'style="' + cleaned + '"' : '';
+            });
+            // <p> → <div> (preserve attributes). Word's <p style="margin:0cm">
+            // becomes <div style="margin:0cm"> which the browser doesn't
+            // double-pad on either side. Also kills the editor/email mismatch
+            // where <p> is tight in the editor (our CSS) but loose in Outlook
+            // (browser default).
+            args.content = args.content.replace(/<p(\s[^>]*)?>/gi, '<div$1>');
+            args.content = args.content.replace(/<\/p>/gi, '</div>');
+        },
+        // Drag-and-drop or paste an image into the editor → upload to the
+        // tenant's asset library, insert the resulting URL. Saves the
+        // copy-paste-URL dance from the standalone "Images" tab.
+        automatic_uploads: true,
+        paste_data_images: true,
+        images_reuse_filename: false,
+        images_upload_handler: function (blobInfo, progress) {
+            return new Promise(function (resolve, reject) {
+                if (!UPLOAD_URL) {
+                    reject({ message: 'Upload not configured' });
+                    return;
+                }
+                var fd = new FormData();
+                fd.append('file',  blobInfo.blob(), blobInfo.filename());
+                fd.append('_csrf', csrf);
+                var xhr = new XMLHttpRequest();
+                xhr.open('POST', UPLOAD_URL);
+                xhr.setRequestHeader('X-CSRF-Token', csrf);
+                xhr.upload.addEventListener('progress', function (e) {
+                    if (e.lengthComputable) progress(e.loaded / e.total * 100);
+                });
+                xhr.onload = function () {
+                    var json = null;
+                    try { json = JSON.parse(xhr.responseText); } catch (e) {}
+                    if (xhr.status >= 200 && xhr.status < 300 && json && json.location) {
+                        resolve(json.location);
+                    } else {
+                        reject({ message: (json && json.error) || ('Upload failed (HTTP ' + xhr.status + ')') });
+                    }
+                };
+                xhr.onerror = function () { reject({ message: 'Network error during upload' }); };
+                xhr.send(fd);
+            });
+        },
         // Be permissive — Purifier sanitizes server-side. Allowing inline styles
         // and font tags is intentional: Outlook signatures rely on them.
         valid_elements: '*[*]',
         extended_valid_elements: '*[*]',
-        forced_root_block: 'p',
+        // Enter creates a new <div> (margin:0 via content_style). Visually
+        // the same as a <br> — no surprise gap — but it's a real block
+        // element, so the lineheight button has something to attach to.
+        // Empty-string forced_root_block produced bare <br>s with no
+        // block parent, which is why line-height was a no-op before.
+        forced_root_block: 'div',
         convert_urls: false,
         entity_encoding: 'raw',
         // Disable the auto-clean that strips Outlook-friendly markup.
@@ -111,15 +280,238 @@
                 text: 'Token',
                 tooltip: 'Insert a token (replaced at delivery time with the user\'s profile data)',
                 fetch: function (cb) {
-                    cb(TOKENS.map(function (t) {
+                    var items = [];
+                    TOKEN_GROUPS.forEach(function (group, gi) {
+                        if (gi > 0) items.push({ type: 'separator' });
+                        items.push({
+                            type: 'nestedmenuitem',
+                            text: group.group,
+                            getSubmenuItems: function () {
+                                return group.items.map(function (t) {
+                                    return {
+                                        type: 'menuitem',
+                                        text: t.token + '   — ' + t.label,
+                                        onAction: function () {
+                                            editor.insertContent('<span class="sigportal-token" data-token="1">' + t.token + '</span>&nbsp;');
+                                        },
+                                    };
+                                });
+                            },
+                        });
+                    });
+                    cb(items);
+                },
+            });
+
+            // Horizontal rule — TinyMCE 6 dropped the built-in hr button so
+            // we register a tiny shim. Outlook honours <hr>, useful for
+            // dividing a header from a body in signatures.
+            editor.ui.registry.addButton('hr', {
+                icon: 'horizontal-rule',
+                tooltip: 'Insert horizontal divider',
+                onAction: function () {
+                    editor.insertContent('<hr style="border:0;border-top:1px solid #ddd;margin:8px 0;">');
+                },
+            });
+
+            // Image-library picker — opens a dialog with thumbnails of every
+            // file under the tenant's Images section so the user doesn't have
+            // to copy-paste URLs by hand.
+            editor.ui.registry.addButton('imagelibrary', {
+                icon: 'image',
+                tooltip: 'Insert image from the tenant library',
+                onAction: function () {
+                    if (!TENANT_ASSETS || TENANT_ASSETS.length === 0) {
+                        editor.windowManager.alert(
+                            'No images uploaded yet. Open Images in the tenant menu and upload some, then come back.'
+                        );
+                        return;
+                    }
+                    var thumbsHtml = TENANT_ASSETS.map(function (a) {
+                        return '<label style="display:inline-block;margin:4px;padding:6px;'
+                             + 'border:1px solid #e3e6eb;border-radius:6px;cursor:pointer;'
+                             + 'background:#fff;text-align:center;width:140px;vertical-align:top;">'
+                             + '<input type="radio" name="picked" value="' + a.url
+                             + '" style="display:none;">'
+                             + '<img src="' + a.url + '" alt="" '
+                             + 'style="display:block;max-width:128px;max-height:80px;margin:0 auto 4px;">'
+                             + '<span style="font-size:11px;color:#444;word-break:break-all;">'
+                             + a.filename + '</span>'
+                             + '</label>';
+                    }).join('');
+
+                    editor.windowManager.open({
+                        title: 'Insert image from library',
+                        size: 'medium',
+                        body: {
+                            type: 'panel',
+                            items: [
+                                { type: 'htmlpanel', html:
+                                    '<div id="sigportal-img-picker" style="max-height:360px;overflow:auto;">'
+                                    + thumbsHtml + '</div>' },
+                                { type: 'input',  name: 'width',  label: 'Width (px, optional)' },
+                                { type: 'input',  name: 'alt',    label: 'Alt text (optional)' },
+                            ],
+                        },
+                        buttons: [
+                            { type: 'cancel', text: 'Cancel' },
+                            { type: 'submit', text: 'Insert', primary: true },
+                        ],
+                        onSubmit: function (api) {
+                            var picker = document.getElementById('sigportal-img-picker');
+                            var sel    = picker && picker.querySelector('input[name="picked"]:checked');
+                            if (!sel) {
+                                editor.windowManager.alert('Pick an image first.');
+                                return;
+                            }
+                            var data = api.getData();
+                            var attrs = ' style="display:block;border:0;"';
+                            if (data.width)  attrs += ' width="' + parseInt(data.width, 10) + '"';
+                            if (data.alt)    attrs += ' alt="' + data.alt.replace(/"/g, '&quot;') + '"';
+                            else             attrs += ' alt=""';
+                            editor.insertContent('<img src="' + sel.value + '"' + attrs + '>');
+                            api.close();
+                        },
+                    });
+
+                    // Highlight the picked thumbnail visually.
+                    setTimeout(function () {
+                        var picker = document.getElementById('sigportal-img-picker');
+                        if (!picker) return;
+                        picker.addEventListener('change', function (e) {
+                            var labels = picker.querySelectorAll('label');
+                            labels.forEach(function (l) { l.style.borderColor = '#e3e6eb'; l.style.background = '#fff'; });
+                            var checked = picker.querySelector('input[name="picked"]:checked');
+                            if (checked) {
+                                var lbl = checked.closest('label');
+                                if (lbl) { lbl.style.borderColor = '#2f6feb'; lbl.style.background = '#eef4ff'; }
+                            }
+                        });
+                    }, 50);
+                },
+            });
+
+            // Pre-built signature blocks — cursor-position insertion.
+            editor.ui.registry.addMenuButton('insertsnippet', {
+                text: 'Snippet',
+                tooltip: 'Insert a pre-built signature block',
+                fetch: function (cb) {
+                    cb(SNIPPETS.map(function (s) {
                         return {
                             type: 'menuitem',
-                            text: t.value + '   — ' + t.label,
+                            text: s.name,
                             onAction: function () {
-                                editor.insertContent('<span class="sigportal-token" data-token="1">' + t.value + '</span>&nbsp;');
+                                editor.insertContent(s.html);
                             },
                         };
                     }));
+                },
+            });
+
+            // Outlook-friendly layout-table wizard — produces tables with
+            // explicit widths in px, vertical-align:top on every cell, and
+            // padding inside the cells (not margins). That's what renders
+            // consistently in Outlook on Windows.
+            editor.ui.registry.addButton('inserttableoutlook', {
+                text: 'Layout',
+                tooltip: 'Insert an Outlook-friendly layout table',
+                onAction: function () {
+                    editor.windowManager.open({
+                        title: 'Insert layout table',
+                        body: {
+                            type: 'panel',
+                            items: [
+                                { type: 'selectbox', name: 'columns', label: 'Layout',
+                                  items: [
+                                      { value: '2-logo-left', text: '2 columns — narrow left (logo) + content' },
+                                      { value: '2-equal',     text: '2 columns — equal width' },
+                                      { value: '3-equal',     text: '3 columns — equal width' },
+                                      { value: '1-divider',   text: '1 column with divider above' },
+                                  ] },
+                                { type: 'input', name: 'width', label: 'Total width (px)' },
+                            ],
+                        },
+                        initialData: { columns: '2-logo-left', width: '600' },
+                        buttons: [
+                            { type: 'cancel', text: 'Cancel' },
+                            { type: 'submit', text: 'Insert', primary: true },
+                        ],
+                        onSubmit: function (api) {
+                            var data  = api.getData();
+                            var width = parseInt(data.width, 10);
+                            if (!width || width < 100) width = 600;
+                            var html;
+                            if (data.columns === '2-logo-left') {
+                                html =
+                                    '<table cellpadding="0" cellspacing="0" border="0" style="width:' + width + 'px;font-family:Arial,sans-serif;">' +
+                                      '<tr>' +
+                                        '<td style="width:140px;vertical-align:top;padding-right:14px;">&nbsp;</td>' +
+                                        '<td style="vertical-align:top;border-left:1px solid #e3e6eb;padding-left:14px;">&nbsp;</td>' +
+                                      '</tr>' +
+                                    '</table>';
+                            } else if (data.columns === '2-equal') {
+                                html =
+                                    '<table cellpadding="0" cellspacing="0" border="0" style="width:' + width + 'px;font-family:Arial,sans-serif;">' +
+                                      '<tr>' +
+                                        '<td style="width:50%;vertical-align:top;padding-right:8px;">&nbsp;</td>' +
+                                        '<td style="width:50%;vertical-align:top;padding-left:8px;">&nbsp;</td>' +
+                                      '</tr>' +
+                                    '</table>';
+                            } else if (data.columns === '3-equal') {
+                                html =
+                                    '<table cellpadding="0" cellspacing="0" border="0" style="width:' + width + 'px;font-family:Arial,sans-serif;">' +
+                                      '<tr>' +
+                                        '<td style="width:33%;vertical-align:top;padding-right:8px;">&nbsp;</td>' +
+                                        '<td style="width:34%;vertical-align:top;padding:0 8px;">&nbsp;</td>' +
+                                        '<td style="width:33%;vertical-align:top;padding-left:8px;">&nbsp;</td>' +
+                                      '</tr>' +
+                                    '</table>';
+                            } else { // 1-divider
+                                html =
+                                    '<hr style="border:0;border-top:1px solid #d0d7de;margin:8px 0;">' +
+                                    '<table cellpadding="0" cellspacing="0" border="0" style="width:' + width + 'px;font-family:Arial,sans-serif;">' +
+                                      '<tr><td style="vertical-align:top;">&nbsp;</td></tr>' +
+                                    '</table>';
+                            }
+                            editor.insertContent(html);
+                            api.close();
+                        },
+                    });
+                },
+            });
+
+            // Wraps the current selection (or a placeholder) in
+            // {if:NAME}…{/if} so the block disappears when NAME is empty.
+            editor.ui.registry.addMenuButton('insertcondition', {
+                text: 'Conditional',
+                tooltip: 'Show the selected content only when a Graph attribute is set',
+                fetch: function (cb) {
+                    var items = [];
+                    TOKEN_GROUPS.forEach(function (group, gi) {
+                        if (gi > 0) items.push({ type: 'separator' });
+                        items.push({
+                            type: 'nestedmenuitem',
+                            text: 'Only if ' + group.group.toLowerCase() + ' …',
+                            getSubmenuItems: function () {
+                                return group.items.map(function (t) {
+                                    var name = t.token.replace(/[{}]/g, '');
+                                    return {
+                                        type: 'menuitem',
+                                        text: t.token + '   — ' + t.label,
+                                        onAction: function () {
+                                            var selected = editor.selection.getContent({ format: 'html' });
+                                            var inner    = selected !== '' ? selected
+                                                                           : '&nbsp;<em>your content here</em>&nbsp;';
+                                            editor.insertContent(
+                                                '{if:' + name + '}' + inner + '{/if}'
+                                            );
+                                        },
+                                    };
+                                });
+                            },
+                        });
+                    });
+                    cb(items);
                 },
             });
 
@@ -147,6 +539,116 @@
         const ed = tinymce.activeEditor;
         if (ed) refresh(ed.getContent());
     });
+
+    // Preview-width toggle (Desktop / Tablet / Mobile). Constrains the
+    // iframe so you can sanity-check how the signature wraps at different
+    // recipient device widths.
+    document.querySelectorAll('.preview-width-btn').forEach(function (btn) {
+        btn.addEventListener('click', function () {
+            const w = btn.getAttribute('data-width') || '100%';
+            frame.style.width = w === '100%' ? '100%' : w;
+            // Highlight the active one.
+            document.querySelectorAll('.preview-width-btn').forEach(function (b) {
+                b.classList.toggle('btn-primary', b === btn);
+            });
+        });
+    });
+
+    // ---- Auto-save to localStorage ---------------------------------------
+    // Saves a JSON blob with the current HTML + name on every keystroke
+    // (debounced 1s). Restored on page load if a draft is present and
+    // differs from the loaded server-side template. Cleared on successful
+    // submit. Survives browser crashes, accidental tab close, network glitches.
+    const nameInput   = document.getElementById('name');
+    const banner      = document.getElementById('draft-restore-banner');
+    const ageEl       = document.getElementById('draft-age');
+    const restoreBtn  = document.getElementById('draft-restore');
+    const discardBtn  = document.getElementById('draft-discard');
+    const statusEl    = document.getElementById('autosave-status');
+    let saveTimer     = null;
+
+    function saveDraft() {
+        try {
+            const ed = tinymce.activeEditor;
+            const html = ed ? ed.getContent() : ta.value;
+            localStorage.setItem(DRAFT_KEY, JSON.stringify({
+                html: html,
+                name: nameInput.value,
+                savedAt: Date.now(),
+            }));
+            if (statusEl) {
+                statusEl.textContent = 'Draft saved · ' + new Date().toLocaleTimeString();
+            }
+        } catch (e) { /* quota / disabled */ }
+    }
+    function scheduleSave() {
+        clearTimeout(saveTimer);
+        saveTimer = setTimeout(saveDraft, 1000);
+    }
+    function clearDraft() {
+        try { localStorage.removeItem(DRAFT_KEY); } catch (e) {}
+    }
+
+    nameInput.addEventListener('input', scheduleSave);
+    document.getElementById('template-form').addEventListener('submit', clearDraft);
+
+    // Hook editor changes (TinyMCE init may not be done yet — defer).
+    function attachEditorAutosave() {
+        const ed = tinymce.activeEditor;
+        if (!ed) return false;
+        ed.on('input change keyup undo redo', scheduleSave);
+        return true;
+    }
+    if (!attachEditorAutosave()) {
+        const iv = setInterval(function () {
+            if (attachEditorAutosave()) clearInterval(iv);
+        }, 200);
+    }
+
+    // Offer to restore on load.
+    function offerRestore() {
+        try {
+            const raw = localStorage.getItem(DRAFT_KEY);
+            if (!raw) return;
+            const draft = JSON.parse(raw);
+            const ed    = tinymce.activeEditor;
+            const current = ed ? ed.getContent() : ta.value;
+            if (!draft.html || draft.html === current) {
+                // No meaningful difference — silently drop the stale draft.
+                clearDraft();
+                return;
+            }
+            const ageMin = Math.max(1, Math.round((Date.now() - (draft.savedAt || 0)) / 60000));
+            ageEl.textContent = '(saved ' + ageMin + ' min ago)';
+            banner.style.display = 'block';
+            restoreBtn.onclick = function () {
+                if (ed) {
+                    ed.setContent(draft.html);
+                    ed.save();
+                } else {
+                    ta.value = draft.html;
+                }
+                if (typeof draft.name === 'string') nameInput.value = draft.name;
+                banner.style.display = 'none';
+                refresh(draft.html);
+            };
+            discardBtn.onclick = function () {
+                clearDraft();
+                banner.style.display = 'none';
+            };
+        } catch (e) { /* corrupt JSON, ignore */ }
+    }
+    // Wait for TinyMCE init before comparing content.
+    if (window.tinymce && tinymce.activeEditor) {
+        offerRestore();
+    } else {
+        const iv2 = setInterval(function () {
+            if (window.tinymce && tinymce.activeEditor) {
+                offerRestore();
+                clearInterval(iv2);
+            }
+        }, 200);
+    }
 })();
 </script>
 {% endblock %}

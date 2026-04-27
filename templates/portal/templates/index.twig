@@ -20,6 +20,10 @@
             <td><a href="/portal/tenants/{{ tenant.id }}/templates/{{ t.id }}/edit">{{ t.name }}</a></td>
             <td>{{ t.updatedAt }}</td>
             <td class="actions">
+                <form method="post" action="/portal/tenants/{{ tenant.id }}/templates/{{ t.id }}/duplicate" class="inline">
+                    <input type="hidden" name="_csrf" value="{{ csrf_token }}">
+                    <button type="submit" class="link-button">Duplicate</button>
+                </form>
                 <form method="post" action="/portal/tenants/{{ tenant.id }}/templates/{{ t.id }}/delete" class="inline"
                       onsubmit="return confirm('Delete this template? Rules using it will be deleted too.')">
                     <input type="hidden" name="_csrf" value="{{ csrf_token }}">

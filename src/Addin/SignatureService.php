@@ -14,6 +14,7 @@ use App\Tenant\TemplateRenderer;
 use App\Tenant\TemplateRepository;
 use App\Tenant\TenantRepository;
 use App\Tenant\TenantService;
+use App\Tenant\UserOverrideRepository;
 
 /**
  * Orchestrates the live signature pipeline:
@@ -35,6 +36,7 @@ final class SignatureService
         private readonly TemplateRenderer $renderer,
         private readonly GraphClient $graph,
         private readonly DisplayEmailDeriver $displayEmail,
+        private readonly UserOverrideRepository $overrides,
     ) {}
 
     public function resolve(SignatureRequest $req): SignatureResult
@@ -47,29 +49,49 @@ final class SignatureService
             return SignatureResult::error(401, 'invalid api key');
         }
 
-        // Resolve the user's Graph profile. If the FROM address has no
-        // profile (typical for shared mailboxes), fall back to the
-        // primary user.
+        // Resolve the user's Graph profile, then decide whether the FROM
+        // address is a shared mailbox.
+        //
+        // Two paths qualify as shared:
+        //   (a) Graph returns 404 for the FROM address (legacy/edge case).
+        //   (b) Graph returns a user object, but it has no assignedLicenses
+        //       — Entra ID models shared/resource mailboxes as licence-less
+        //       user objects. Personal mailboxes always carry a licence.
+        //
+        // In both cases we re-fetch the primary user's profile and use that
+        // for token rendering (name, title, phone) while keeping the FROM
+        // address as the display email.
         try {
-            $profile      = $this->graph->getUserProfile($tenant, $req->fromEmail);
-            $isSharedFrom = false;
+            $fromProfile  = $this->graph->getUserProfile($tenant, $req->fromEmail);
+            $isSharedFrom = $fromProfile === null || $fromProfile->looksLikeSharedMailbox();
 
-            if ($profile === null) {
+            if (!$isSharedFrom) {
+                $profile = $fromProfile;
+            } else {
                 if ($req->primaryEmail === '' || $req->primaryEmail === $req->fromEmail) {
-                    return SignatureResult::error(404, 'unknown sender and no primary user supplied');
+                    // Shared mailbox detected but no primary user to fall back to.
+                    // For path (a) this is a hard 404; for path (b) we have a profile
+                    // but it lacks real user info — better to noop than render a bad sig.
+                    if ($fromProfile === null) {
+                        return SignatureResult::error(404, 'unknown sender and no primary user supplied');
+                    }
+                    return SignatureResult::error(404, 'shared mailbox detected but no primary user supplied');
                 }
                 $profile = $this->graph->getUserProfile($tenant, $req->primaryEmail);
                 if ($profile === null) {
                     return SignatureResult::error(404, 'primary user not found in Graph');
                 }
-                $isSharedFrom = true;
             }
         } catch (GraphException $e) {
             return SignatureResult::error(502, 'Graph error: ' . $e->getMessage());
         }
 
         $emailToken = $isSharedFrom
-            ? $this->displayEmail->deriveForSharedMailbox($profile, $this->domainOf($req->fromEmail))
+            ? $this->displayEmail->deriveForSharedMailbox(
+                  $profile,
+                  $req->fromEmail,
+                  $tenant->sharedDisplayMode,
+              )
             : ($profile->mail ?? $profile->userPrincipalName);
 
         // Build the rule-engine context. Fields the caller supplied take
@@ -86,25 +108,39 @@ final class SignatureService
             $tenant->emailDomains,
         );
 
-        $rule = $this->engine->selectRule($tenant->id, $ctx);
-        if ($rule === null) {
-            return SignatureResult::noMatch($isSharedFrom);
-        }
+        // Per-user override sits ABOVE the rule engine. Match key is the
+        // primary user's address — the actual person sending — so overrides
+        // follow the user even when they send from a shared mailbox.
+        $overrideEmail = $req->primaryEmail !== '' ? $req->primaryEmail : $req->fromEmail;
+        $override      = $this->overrides->findByEmail($tenant->id, $overrideEmail);
 
-        $template = $this->templates->find($rule->templateId, $tenant->id);
-        if ($template === null) {
-            return SignatureResult::error(500, 'rule references missing template');
+        if ($override !== null) {
+            $template = $this->templates->find($override->templateId, $tenant->id);
+            if ($template === null) {
+                return SignatureResult::error(500, 'override references missing template');
+            }
+        } else {
+            $rule = $this->engine->selectRule($tenant->id, $ctx);
+            if ($rule === null) {
+                return SignatureResult::noMatch($isSharedFrom);
+            }
+            $template = $this->templates->find($rule->templateId, $tenant->id);
+            if ($template === null) {
+                return SignatureResult::error(500, 'rule references missing template');
+            }
         }
 
         $tokens   = TemplateRenderer::tokensFromProfile($profile, $emailToken);
         $rendered = $this->renderer->render($template->html, $tokens);
 
-        return SignatureResult::ok($rendered, $isSharedFrom);
-    }
+        // Tenant-wide disclaimer (legal footer) — appended to every signature
+        // so admins don't have to copy HRB / Geschäftsführer lines into each
+        // template. Tokens inside the disclaimer are also substituted so
+        // {email} etc. work there too.
+        if ($tenant->disclaimerHtml !== null && trim($tenant->disclaimerHtml) !== '') {
+            $rendered .= $this->renderer->render($tenant->disclaimerHtml, $tokens);
+        }
 
-    private function domainOf(string $email): string
-    {
-        $at = strrchr($email, '@');
-        return $at === false ? '' : mb_strtolower(substr($at, 1));
+        return SignatureResult::ok($rendered, $isSharedFrom);
     }
 }

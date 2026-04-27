@@ -4,10 +4,26 @@
         <div class="muted"><code>{{ tenant.slug }}</code></div>
     </div>
 </div>
+
+{% if tenant.apiKeyEncrypted and tenant.apiKeyLastRotatedAt and (tenant.apiKeyAcknowledgedAt is null or tenant.apiKeyAcknowledgedAt < tenant.apiKeyLastRotatedAt) %}
+<div class="alert alert-error" style="display:flex;align-items:center;justify-content:space-between;gap:12px;">
+    <div>
+        <strong>API key was rotated on {{ tenant.apiKeyLastRotatedAt }}.</strong>
+        Redistribute the new manifest before the old key fully drops out of users' Outlook clients.
+    </div>
+    <form method="post" action="/portal/tenants/{{ tenant.id }}/acknowledge-api-key" class="inline">
+        <input type="hidden" name="_csrf" value="{{ csrf_token }}">
+        <button type="submit" class="btn">Acknowledge</button>
+    </form>
+</div>
+{% endif %}
 <nav class="sub-nav">
     <a href="/portal/tenants/{{ tenant.id }}"           class="{{ active == 'overview'  ? 'active' : '' }}">Overview</a>
     <a href="/portal/tenants/{{ tenant.id }}/templates" class="{{ active == 'templates' ? 'active' : '' }}">Templates</a>
+    <a href="/portal/tenants/{{ tenant.id }}/assets"    class="{{ active == 'assets'    ? 'active' : '' }}">Images</a>
     <a href="/portal/tenants/{{ tenant.id }}/rules"     class="{{ active == 'rules'     ? 'active' : '' }}">Rules</a>
+    <a href="/portal/tenants/{{ tenant.id }}/overrides" class="{{ active == 'overrides' ? 'active' : '' }}">Overrides</a>
     <a href="/portal/tenants/{{ tenant.id }}/simulator" class="{{ active == 'simulator' ? 'active' : '' }}">Simulator</a>
+    <a href="/portal/tenants/{{ tenant.id }}/activity"  class="{{ active == 'activity'  ? 'active' : '' }}">Activity</a>
     <a href="/portal/tenants/{{ tenant.id }}/edit"      class="{{ active == 'settings'  ? 'active' : '' }}">Settings</a>
 </nav>

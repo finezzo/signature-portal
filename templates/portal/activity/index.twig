@@ -1,0 +1,35 @@
+{% extends "portal/layout.twig" %}
+{% block title %}Activity — {{ tenant.name }}{% endblock %}
+
+{% block sub_nav %}{% include 'portal/_tenant_nav.twig' with {'tenant': tenant, 'active': 'activity'} %}{% endblock %}
+
+{% block content %}
+<h2>Activity</h2>
+<p class="muted" style="font-size:13px;">Most recent 200 changes within this tenant. Append-only — entries cannot be edited or removed from the portal.</p>
+
+{% if entries is empty %}
+    <p class="muted">No activity yet.</p>
+{% else %}
+<table class="data-table">
+    <thead><tr>
+        <th>When</th><th>Who</th><th>Action</th><th>Target</th><th>Detail</th><th>IP</th>
+    </tr></thead>
+    <tbody>
+    {% for e in entries %}
+        <tr>
+            <td class="muted" style="white-space:nowrap;font-size:13px;">{{ e.created_at }}</td>
+            <td>{{ e.user_email ?: '— system —' }}</td>
+            <td><code>{{ e.action }}</code></td>
+            <td>
+                {% if e.target_type %}
+                    {{ e.target_type }}{% if e.target_id %}#{{ e.target_id }}{% endif %}
+                {% else %}—{% endif %}
+            </td>
+            <td>{{ e.summary ?: '' }}</td>
+            <td class="muted" style="font-family:ui-monospace,Menlo,Consolas,monospace;font-size:12px;">{{ e.ip_address ?: '' }}</td>
+        </tr>
+    {% endfor %}
+    </tbody>
+</table>
+{% endif %}
+{% endblock %}

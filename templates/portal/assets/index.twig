@@ -1,0 +1,90 @@
+{% extends "portal/layout.twig" %}
+{% block title %}Images — {{ tenant.name }} — SignaturePortal{% endblock %}
+
+{% block sub_nav %}{% include 'portal/_tenant_nav.twig' with {'tenant': tenant, 'active': 'assets'} %}{% endblock %}
+
+{% block content %}
+<div class="page-header">
+    <h2>Images</h2>
+</div>
+
+<div class="card" style="margin-bottom:24px;">
+    <h3 style="margin-top:0;">Upload</h3>
+    <p class="muted" style="font-size:13px;">
+        PNG, JPG, GIF, or WebP — up to {{ max_size_mb }} MB each. Once uploaded,
+        copy the URL and paste it into a template's <code>&lt;img src="…"&gt;</code> tag.
+    </p>
+    <form method="post" action="/portal/tenants/{{ tenant.id }}/assets" enctype="multipart/form-data">
+        <input type="hidden" name="_csrf" value="{{ csrf_token }}">
+        <input type="file" name="file" accept="image/png,image/jpeg,image/gif,image/webp" required>
+        <button type="submit" class="btn btn-primary" style="margin-top:0;margin-left:8px;">Upload</button>
+    </form>
+</div>
+
+<div class="card">
+    <h3 style="margin-top:0;">Library ({{ assets|length }})</h3>
+    {% if assets is empty %}
+        <p class="muted">No images yet — upload above.</p>
+    {% else %}
+        <table class="data-table">
+            <thead>
+                <tr>
+                    <th style="width:88px;">Preview</th>
+                    <th>Filename</th>
+                    <th style="width:90px;">Size</th>
+                    <th>URL</th>
+                    <th class="actions"></th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for a in assets %}
+                <tr>
+                    <td><img src="{{ a.url }}" alt="" style="max-width:72px;max-height:48px;display:block;border:1px solid var(--border);border-radius:4px;"></td>
+                    <td><code>{{ a.filename }}</code></td>
+                    <td>{{ (a.size / 1024)|round }} KB</td>
+                    <td>
+                        <input type="text" readonly value="{{ a.url }}"
+                               class="copybox-input"
+                               style="font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:12px;"
+                               onclick="this.select();">
+                    </td>
+                    <td class="actions">
+                        <button type="button" class="btn btn-secondary copy-url-btn" data-url="{{ a.url }}">Copy URL</button>
+                        <form method="post" action="/portal/tenants/{{ tenant.id }}/assets/delete" class="inline"
+                              onsubmit="return confirm('Delete {{ a.filename }}? Templates that reference it will show a broken image.');">
+                            <input type="hidden" name="_csrf" value="{{ csrf_token }}">
+                            <input type="hidden" name="filename" value="{{ a.filename }}">
+                            <button type="submit" class="btn btn-danger">Delete</button>
+                        </form>
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    {% endif %}
+</div>
+
+<script>
+document.querySelectorAll('.copy-url-btn').forEach(function(btn) {
+    btn.addEventListener('click', function() {
+        var url = btn.getAttribute('data-url');
+        if (!url) return;
+        if (navigator.clipboard && navigator.clipboard.writeText) {
+            navigator.clipboard.writeText(url).then(function() {
+                var original = btn.textContent;
+                btn.textContent = 'Copied!';
+                setTimeout(function() { btn.textContent = original; }, 1200);
+            });
+        } else {
+            // Fallback for older browsers
+            var tmp = document.createElement('textarea');
+            tmp.value = url;
+            document.body.appendChild(tmp);
+            tmp.select();
+            try { document.execCommand('copy'); } catch (e) {}
+            document.body.removeChild(tmp);
+        }
+    });
+});
+</script>
+{% endblock %}

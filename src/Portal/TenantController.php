@@ -4,7 +4,11 @@ declare(strict_types=1);
 namespace App\Portal;
 
 use App\Addin\ManifestGenerator;
+use App\Audit\AuditLogger;
+use App\Auth\EntraProvider;
 use App\Auth\SessionManager;
+use App\Tenant\AssetRepository;
+use App\Tenant\TemplateRenderer;
 use App\Tenant\TenantRepository;
 use App\Tenant\TenantService;
 use Psr\Http\Message\ResponseInterface;
@@ -20,6 +24,10 @@ final class TenantController
         private readonly TenantService $tenantService,
         private readonly ManifestGenerator $manifest,
         private readonly SessionManager $session,
+        private readonly EntraProvider $entra,
+        private readonly AssetRepository $assets,
+        private readonly TemplateRenderer $renderer,
+        private readonly AuditLogger $audit,
     ) {}
 
     public function index(ServerRequestInterface $request, ResponseInterface $response): ResponseInterface
@@ -81,6 +89,8 @@ final class TenantController
         );
 
         $apiKey = $this->tenantService->rotateApiKey($id);
+        $this->audit->record($id, 'tenant.created', 'tenant', $id, "Tenant '{$form['name']}' created", ['slug' => $form['slug']]);
+        $this->audit->record($id, 'tenant.api_key.rotated', 'tenant', $id, 'Initial API key generated');
         $this->session->flash('success', 'Tenant created. API key (shown once): ' . $apiKey);
 
         return $response->withHeader('Location', "/portal/tenants/{$id}")->withStatus(302);
@@ -92,7 +102,8 @@ final class TenantController
         if ($tenant instanceof ResponseInterface) return $tenant;
 
         return $this->view->render($response, 'portal/tenants/show.twig', [
-            'tenant' => $tenant,
+            'tenant'           => $tenant,
+            'sso_redirect_uri' => $this->entra->redirectUri($tenant),
         ]);
     }
 
@@ -104,11 +115,16 @@ final class TenantController
         return $this->view->render($response, 'portal/tenants/form.twig', [
             'tenant' => $tenant,
             'form'   => [
-                'slug'             => $tenant->slug,
-                'name'             => $tenant->name,
-                'email_domains'    => implode("\n", $tenant->emailDomains),
-                'entra_tenant_id'  => $tenant->entraTenantId ?? '',
-                'entra_client_id'  => $tenant->entraClientId ?? '',
+                'slug'                 => $tenant->slug,
+                'name'                 => $tenant->name,
+                'email_domains'        => implode("\n", $tenant->emailDomains),
+                'entra_tenant_id'      => $tenant->entraTenantId ?? '',
+                'entra_client_id'      => $tenant->entraClientId ?? '',
+                'sso_enabled'          => $tenant->ssoEnabled ? '1' : '',
+                'sso_auto_provision'   => $tenant->ssoAutoProvision ? '1' : '',
+                'sso_default_role'     => $tenant->ssoDefaultRole,
+                'shared_display_mode'  => $tenant->sharedDisplayMode,
+                'disclaimer_html'      => $tenant->disclaimerHtml ?? '',
             ],
             'errors' => [],
         ]);
@@ -120,12 +136,25 @@ final class TenantController
         if ($tenant instanceof ResponseInterface) return $tenant;
 
         $body = (array) $request->getParsedBody();
+        $defaultRole = (string) ($body['sso_default_role'] ?? 'tenant_editor');
+        if (!in_array($defaultRole, ['tenant_admin', 'tenant_editor'], true)) {
+            $defaultRole = 'tenant_editor';
+        }
+        $sharedMode = (string) ($body['shared_display_mode'] ?? 'shared');
+        if (!in_array($sharedMode, ['shared', 'derived'], true)) {
+            $sharedMode = 'shared';
+        }
         $form = [
-            'slug'             => $tenant->slug, // immutable
-            'name'             => trim((string) ($body['name'] ?? '')),
-            'email_domains'    => (string) ($body['email_domains'] ?? ''),
-            'entra_tenant_id'  => trim((string) ($body['entra_tenant_id'] ?? '')),
-            'entra_client_id'  => trim((string) ($body['entra_client_id'] ?? '')),
+            'slug'                => $tenant->slug, // immutable
+            'name'                => trim((string) ($body['name'] ?? '')),
+            'email_domains'       => (string) ($body['email_domains'] ?? ''),
+            'entra_tenant_id'     => trim((string) ($body['entra_tenant_id'] ?? '')),
+            'entra_client_id'     => trim((string) ($body['entra_client_id'] ?? '')),
+            'sso_enabled'         => !empty($body['sso_enabled']) ? '1' : '',
+            'sso_auto_provision'  => !empty($body['sso_auto_provision']) ? '1' : '',
+            'sso_default_role'    => $defaultRole,
+            'shared_display_mode' => $sharedMode,
+            'disclaimer_html'     => (string) ($body['disclaimer_html'] ?? ''),
         ];
 
         $errors = $this->validateTenantForm($form, isCreate: false);
@@ -140,6 +169,11 @@ final class TenantController
             ? $this->tenantService->encryptEntraSecret($newSecret)
             : null;
 
+        // Sanitize disclaimer like a template — same XSS allowlist applies.
+        $disclaimerSanitized = trim($form['disclaimer_html']) === ''
+            ? null
+            : $this->renderer->sanitize($form['disclaimer_html']);
+
         $this->tenants->update(
             $tenant->id,
             $form['name'],
@@ -147,8 +181,14 @@ final class TenantController
             $form['entra_tenant_id'] !== '' ? $form['entra_tenant_id'] : null,
             $form['entra_client_id'] !== '' ? $form['entra_client_id'] : null,
             $encryptedSecret,
+            $form['sso_enabled'] === '1',
+            $form['sso_auto_provision'] === '1',
+            $form['sso_default_role'],
+            $form['shared_display_mode'],
+            $disclaimerSanitized,
         );
 
+        $this->audit->record($tenant->id, 'tenant.updated', 'tenant', $tenant->id, "Settings saved for '{$form['name']}'");
         $this->session->flash('success', 'Tenant updated.');
         return $response->withHeader('Location', "/portal/tenants/{$tenant->id}")->withStatus(302);
     }
@@ -159,8 +199,17 @@ final class TenantController
         if (!AccessControl::isSuperadmin($user)) {
             return $this->forbidden($response);
         }
-        $id = (int) $args['id'];
+        $id     = (int) $args['id'];
+        $tenant = $this->tenants->find($id);
         $this->tenants->delete($id);
+        if ($tenant !== null) {
+            // FK CASCADE handles DB rows; the asset directory on disk has to
+            // be removed explicitly so a recreated tenant with the same slug
+            // doesn't inherit old images.
+            $this->assets->dropTenant($tenant->slug);
+            // tenant_id will be set to NULL by the FK so the entry survives.
+            $this->audit->record($tenant->id, 'tenant.deleted', 'tenant', $tenant->id, "Tenant '{$tenant->name}' deleted");
+        }
         $this->session->flash('success', 'Tenant deleted.');
         return $response->withHeader('Location', '/portal/tenants')->withStatus(302);
     }
@@ -171,7 +220,19 @@ final class TenantController
         if ($tenant instanceof ResponseInterface) return $tenant;
 
         $key = $this->tenantService->rotateApiKey($tenant->id);
+        $this->audit->record($tenant->id, 'tenant.api_key.rotated', 'tenant', $tenant->id, 'API key rotated');
         $this->session->flash('success', 'API key rotated. New key (shown once): ' . $key);
+        return $response->withHeader('Location', "/portal/tenants/{$tenant->id}")->withStatus(302);
+    }
+
+    public function acknowledgeKey(ServerRequestInterface $request, ResponseInterface $response, array $args): ResponseInterface
+    {
+        $tenant = $this->loadTenantOr404($args, $request);
+        if ($tenant instanceof ResponseInterface) return $tenant;
+
+        $this->tenants->acknowledgeApiKey($tenant->id);
+        $this->audit->record($tenant->id, 'tenant.api_key.acknowledged', 'tenant', $tenant->id, 'API key rotation acknowledged');
+        $this->session->flash('success', 'API key acknowledged. The reminder banner is dismissed until the next rotation.');
         return $response->withHeader('Location', "/portal/tenants/{$tenant->id}")->withStatus(302);
     }
 
@@ -254,6 +315,11 @@ final class TenantController
                 $errors[] = 'Slug must be lowercase alphanumerics and dashes (max 64 chars, must start/end alphanumeric).';
             } elseif ($this->tenants->findBySlug($slug) !== null) {
                 $errors[] = 'A tenant with this slug already exists.';
+            }
+        }
+        if (($form['sso_enabled'] ?? '') === '1') {
+            if (($form['entra_tenant_id'] ?? '') === '' || ($form['entra_client_id'] ?? '') === '') {
+                $errors[] = 'SSO requires both Entra tenant ID and client ID.';
             }
         }
         return $errors;

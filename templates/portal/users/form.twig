@@ -1,0 +1,56 @@
+{% extends "portal/layout.twig" %}
+{% block title %}{{ user ? 'Edit user' : 'Add user' }} — SignaturePortal{% endblock %}
+
+{% block content %}
+<h2>{{ user ? 'Edit user' : 'Add user' }}</h2>
+
+{% if errors %}
+    <div class="alert alert-error">
+        <ul style="margin:0;padding-left:18px;">
+            {% for e in errors %}<li>{{ e }}</li>{% endfor %}
+        </ul>
+    </div>
+{% endif %}
+
+<div class="card" style="max-width:600px;">
+    <form method="post"
+          action="{{ user ? '/portal/users/' ~ user.id : '/portal/users' }}"
+          autocomplete="off">
+        <input type="hidden" name="_csrf" value="{{ csrf_token }}">
+
+        <label for="email">Email</label>
+        <input id="email" name="email" type="email" value="{{ form.email }}" required {{ user ? 'readonly' : '' }}>
+        {% if user %}<div class="muted" style="font-size:13px;">Email is immutable; create a new account if you need a different one.</div>{% endif %}
+
+        <label for="name">Display name (optional)</label>
+        <input id="name" name="name" type="text" value="{{ form.name }}" maxlength="255">
+
+        <label for="role">Role</label>
+        <select id="role" name="role">
+            <option value="superadmin"    {{ form.role == 'superadmin'    ? 'selected' : '' }}>Superadmin (cross-tenant)</option>
+            <option value="tenant_admin"  {{ form.role == 'tenant_admin'  ? 'selected' : '' }}>Tenant admin</option>
+            <option value="tenant_editor" {{ form.role == 'tenant_editor' ? 'selected' : '' }}>Tenant editor</option>
+        </select>
+
+        <label for="tenant_id">Tenant</label>
+        <select id="tenant_id" name="tenant_id">
+            <option value="" {{ form.tenant_id == '' ? 'selected' : '' }}>— none (for superadmins) —</option>
+            {% for t in tenants %}
+                <option value="{{ t.id }}" {{ form.tenant_id == t.id ? 'selected' : '' }}>{{ t.name }} ({{ t.slug }})</option>
+            {% endfor %}
+        </select>
+
+        <label for="password">{{ user ? 'New password (leave blank to keep current)' : 'Password (min 10 chars)' }}</label>
+        <input id="password" name="password" type="password" autocomplete="new-password" {{ user ? '' : 'required' }}>
+
+        {% if user and user.auth_provider == 'entra' %}
+            <div class="alert" style="background:#eef4ff;color:#1e40af;font-size:13px;margin-top:12px;">
+                This account uses Entra SSO. Setting a local password also makes local sign-in possible — useful as a fallback if SSO breaks.
+            </div>
+        {% endif %}
+
+        <button type="submit" class="btn btn-primary" style="margin-top:20px;">{{ user ? 'Save changes' : 'Create user' }}</button>
+        <a class="btn" href="/portal/users" style="margin-left:8px;">Cancel</a>
+    </form>
+</div>
+{% endblock %}

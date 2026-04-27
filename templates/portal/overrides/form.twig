@@ -1,0 +1,44 @@
+{% extends "portal/layout.twig" %}
+{% block title %}{{ override ? 'Edit override' : 'Add override' }} — {{ tenant.name }}{% endblock %}
+
+{% block sub_nav %}{% include 'portal/_tenant_nav.twig' with {'tenant': tenant, 'active': 'overrides'} %}{% endblock %}
+
+{% block content %}
+<div class="card" style="max-width:640px;">
+    <h2>{{ override ? 'Edit override' : 'Add override' }}</h2>
+
+    {% if errors %}
+        <div class="alert alert-error">
+            <ul style="margin:0;padding-left:18px;">
+                {% for e in errors %}<li>{{ e }}</li>{% endfor %}
+            </ul>
+        </div>
+    {% endif %}
+
+    {% if templates is empty %}
+        <div class="alert alert-error">This tenant has no templates yet — <a href="/portal/tenants/{{ tenant.id }}/templates/new">create one</a> first.</div>
+    {% endif %}
+
+    <form method="post" action="{{ override ? '/portal/tenants/' ~ tenant.id ~ '/overrides/' ~ override.id : '/portal/tenants/' ~ tenant.id ~ '/overrides' }}">
+        <input type="hidden" name="_csrf" value="{{ csrf_token }}">
+
+        <label for="email">User email</label>
+        <input id="email" name="email" type="email" value="{{ form.email }}" required placeholder="anna.beispiel@blissair.de">
+        <div class="muted" style="font-size:13px;">The user's primary mailbox address (UPN). Match is case-insensitive.</div>
+
+        <label for="template_id">Template</label>
+        <select id="template_id" name="template_id" required>
+            <option value="">— select —</option>
+            {% for t in templates %}
+                <option value="{{ t.id }}" {{ form.template_id == t.id ? 'selected' : '' }}>{{ t.name }}</option>
+            {% endfor %}
+        </select>
+
+        <label for="note">Note (optional)</label>
+        <input id="note" name="note" type="text" value="{{ form.note }}" maxlength="255" placeholder="Why this exception exists — for future you">
+
+        <button type="submit" class="btn btn-primary" {{ templates is empty ? 'disabled' : '' }}>{{ override ? 'Save changes' : 'Add override' }}</button>
+        <a class="btn" href="/portal/tenants/{{ tenant.id }}/overrides" style="margin-left:8px;">Cancel</a>
+    </form>
+</div>
+{% endblock %}
