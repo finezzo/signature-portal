@@ -58,16 +58,17 @@ final class AuthController
 
         $result = $this->auth->attempt($email, $pass);
         if (!$result->ok()) {
+            // Generic message for every failure path — including lockout —
+            // so an attacker can't probe whether an email exists by
+            // triggering 5 misses and reading a different message back.
+            // The lockout itself still applies; it's just not advertised.
+            $this->session->set('flash_login_error', 'Invalid email or password.');
             if ($result->state === \App\Auth\AuthAttemptResult::STATE_LOCKED) {
-                $until = $result->lockedUntil !== null
-                    ? date('H:i', (int) strtotime($result->lockedUntil))
-                    : 'a few minutes';
-                $this->session->set(
-                    'flash_login_error',
-                    'Too many failed attempts. This account is locked until ' . $until . '.'
+                error_log(
+                    '[login] lockout active for email='
+                    . mb_strtolower(trim($email))
+                    . ' until=' . ($result->lockedUntil ?? 'unknown')
                 );
-            } else {
-                $this->session->set('flash_login_error', 'Invalid email or password.');
             }
             return $response->withHeader('Location', '/portal/login')->withStatus(302);
         }

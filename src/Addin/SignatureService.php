@@ -41,12 +41,12 @@ final class SignatureService
 
     public function resolve(SignatureRequest $req): SignatureResult
     {
+        // Single error message + status for both "tenant doesn't exist" and
+        // "bad key" — otherwise an attacker can probe slugs and identify
+        // which exist by inspecting the response body.
         $tenant = $this->tenants->findBySlug($req->tenantSlug);
-        if ($tenant === null) {
-            return SignatureResult::error(401, 'unknown tenant');
-        }
-        if (!$this->tenantService->verifyApiKey($tenant, $req->apiKey)) {
-            return SignatureResult::error(401, 'invalid api key');
+        if ($tenant === null || !$this->tenantService->verifyApiKey($tenant, $req->apiKey)) {
+            return SignatureResult::error(401, 'unknown tenant or invalid api key');
         }
 
         // Resolve the user's Graph profile, then decide whether the FROM
@@ -83,7 +83,13 @@ final class SignatureService
                 }
             }
         } catch (GraphException $e) {
-            return SignatureResult::error(502, 'Graph error: ' . $e->getMessage());
+            // Don't reflect the Graph message back to the caller — it
+            // contains the email address that was queried, which would let
+            // an API-key holder enumerate users by triggering Graph errors.
+            // Server-side log keeps the diagnostic for ops.
+            error_log('[/api/sig] Graph lookup failed for tenant '
+                . $tenant->slug . ': ' . $e->getMessage());
+            return SignatureResult::error(502, 'graph lookup failed');
         }
 
         $emailToken = $isSharedFrom

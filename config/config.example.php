@@ -26,6 +26,11 @@ return [
     // and the add-in manifest generator.
     'base_url' => 'http://localhost:8090',
 
+    // When true, unhandled exceptions render with full stack traces in the
+    // browser. NEVER set true in production — leaks file paths, source code,
+    // and DB internals to anyone who can trigger an error.
+    'debug' => false,
+
     'auth' => [
         'local' => ['enabled' => true],
         'entra' => ['enabled' => false],

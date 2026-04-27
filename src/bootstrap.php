@@ -149,7 +149,11 @@ return (static function (): \Slim\App {
     $app->add(CsrfMiddleware::class);
     $app->add(SessionStartMiddleware::class);
     $app->addRoutingMiddleware();
-    $app->addErrorMiddleware(true, true, true);
+    // displayErrorDetails ON only when config.debug is set — never in
+    // production, where it would leak full stack traces, file paths and
+    // source code to anyone who can trigger an error.
+    $debug = (bool) $container->get(Config::class)->get('debug', false);
+    $app->addErrorMiddleware($debug, true, true);
 
     (require $rootDir . '/src/routes.php')($app);
 

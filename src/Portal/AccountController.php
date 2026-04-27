@@ -32,10 +32,29 @@ final class AccountController
         }
 
         return $this->view->render($response, 'portal/account.twig', [
-            'account' => $user,
+            'account' => $this->viewableAccount($user),
             'errors'  => [],
             'form'    => ['name' => (string) ($user['name'] ?? '')],
         ]);
+    }
+
+    /**
+     * Project the user row down to the fields the view actually needs.
+     * Avoids passing `password_hash`, `locked_until`, `failed_login_count`,
+     * etc. into Twig context where a future template change could
+     * accidentally render them.
+     *
+     * @param array<string,mixed> $user
+     * @return array<string,mixed>
+     */
+    private function viewableAccount(array $user): array
+    {
+        return [
+            'email'         => (string) ($user['email'] ?? ''),
+            'role'          => (string) ($user['role'] ?? ''),
+            'auth_provider' => (string) ($user['auth_provider'] ?? 'local'),
+            'has_password'  => !empty($user['password_hash']),
+        ];
     }
 
     public function update(ServerRequestInterface $request, ResponseInterface $response): ResponseInterface
@@ -85,7 +104,7 @@ final class AccountController
 
         if ($errors !== []) {
             return $this->view->render($response, 'portal/account.twig', [
-                'account' => $user,
+                'account' => $this->viewableAccount($user),
                 'errors'  => $errors,
                 'form'    => ['name' => $name],
             ]);

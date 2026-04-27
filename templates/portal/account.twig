@@ -28,7 +28,7 @@
         <label for="name">Display name</label>
         <input id="name" name="name" type="text" value="{{ form.name }}" maxlength="255" placeholder="Your name (optional)">
 
-        {% if account.password_hash %}
+        {% if account.has_password %}
         <h3 style="margin-top:32px;">Change password</h3>
         <p class="muted" style="font-size:13px;">Leave blank if you don't want to change your password.</p>
 

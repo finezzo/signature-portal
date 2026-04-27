@@ -212,6 +212,10 @@ return [
 
     'base_url' => {$exp((string) $form['base_url'])},
 
+    // When true, unhandled exceptions render with full stack traces in the
+    // browser. NEVER set true in production.
+    'debug' => false,
+
     'auth' => [
         'local' => ['enabled' => true],
         'entra' => ['enabled' => false],
