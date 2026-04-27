@@ -21,6 +21,11 @@
 /Signatur_*.htm
 /manifest*.xml
 
+# Personal scratch / notes files at the project root
+/Github*
+/*.notes
+/*.scratch
+
 # Composer lockfile is committed; keep vendor too (IONOS shared hosting has no shell)
 # /vendor/  ← intentionally NOT ignored
 
