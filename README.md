@@ -124,7 +124,7 @@ This project is not affiliated with, endorsed by, or sponsored by Microsoft Corp
 
 Apache License 2.0 — see [LICENSE](LICENSE).
 
-This project bundles vendored dependencies under their own licences (so it can be deployed without `composer install` on the server). Notable: `ezyang/htmlpurifier` is **LGPL-2.1-or-later**, which is compatible with Apache-2.0 distribution. All other vendored packages are MIT or BSD-style. Run `composer licenses` for the full list.
+This project bundles vendored dependencies under their own licences (so it can be deployed without `composer install` on the server). Notable: `ezyang/htmlpurifier` is **LGPL-2.1-or-later**, which is compatible with Apache-2.0 distribution. All other vendored packages are MIT or BSD-style. The full dependency list lives under `vendor/<vendor-name>/<package>/LICENSE`.
 
 ## Contributing
 

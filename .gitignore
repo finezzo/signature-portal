@@ -26,6 +26,16 @@
 /*.notes
 /*.scratch
 
+# Development tooling — kept locally, NOT shipped in the public install
+# package. The published repo is a "ready to deploy" bundle: vendor/ is
+# pre-built, no composer install or Docker runtime is required to use it.
+/CLAUDE.md
+/composer.json
+/composer.lock
+/docker/
+/docker-compose.yml
+/tests/
+
 # Composer lockfile is committed; keep vendor too (IONOS shared hosting has no shell)
 # /vendor/  ← intentionally NOT ignored
 

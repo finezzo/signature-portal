@@ -7,7 +7,7 @@ It covers two things:
 - **Part 1 — Deployment**: how to install the portal on your hoster, configure SSL, run the installer, and ship the Outlook add-in to your users.
 - **Part 2 — Operation**: how the portal works once it's live — tenants, templates, rules, overrides, the asset library, the audit log — so you can drive it day-to-day.
 
-If you only want to know what the project is, read the [README](README.md) first. For local development against a Docker stack, see the [appendix](#appendix-local-development-with-docker) at the bottom.
+If you only want to know what the project is, read the [README](README.md) first.
 
 ---
 
@@ -69,7 +69,7 @@ Only these folders need to live on the server at runtime:
 └── vendor/
 ```
 
-Documentation files (`README.md`, `SETUP.md`, `CLAUDE.md`, `LICENSE`), `composer.*`, `docker*`, `tests/`, and `.git/` aren't needed and don't need to be uploaded.
+Documentation files (`README.md`, `SETUP.md`, `LICENSE`) and `.git/` aren't needed and don't need to be uploaded — they're for browsing the repo on GitHub, not for running the portal.
 
 For most users: drag-and-drop the seven folders via FileZilla / Cyberduck. The slowest part is `vendor/` (~3000 files); allow 5–10 minutes the first time. Subsequent updates are quick because most files don't change.
 
@@ -419,59 +419,3 @@ Useful as a regression-check before changing live rules, and as a "preview as us
 | Rule never matches in production but matches in the simulator | Confirm the tenant's `email_domains` are correct — recipient classification depends on them. Also check `is_enabled` and the validity window. |
 | `/api/sig` returns `502 graph lookup failed` | Server log has the actual Graph message. Most common: missing admin consent for `User.Read.All`, or a stale client secret. |
 | Installer says "config exists, can't re-run" | Drop the database and delete `config/config.php`, then re-run. (Do not do this in production unless you mean it — Entra secrets become unrecoverable.) |
-
----
-
-## Appendix: Local development with Docker
-
-This is **only** for working on the SignaturePortal codebase itself. Skip the rest of this section if you only want to deploy.
-
-The repo ships a Docker stack: PHP 8.1 + Apache, MySQL 8, phpMyAdmin.
-
-```bash
-docker compose up -d
-```
-
-| | URL |
-|---|---|
-| Portal | http://localhost:8090 |
-| phpMyAdmin | http://localhost:8091 (root / root) |
-| MySQL on host | `127.0.0.1:3317` (user `sigportal`, db `signatureportal`) |
-
-**First-time only — install Composer dependencies inside the container** (the production repo ships `vendor/` already, but for development you populate it via Composer):
-
-```bash
-docker compose exec app composer install --no-interaction
-```
-
-Then run the installer at <http://localhost:8090/install.php>:
-
-- DB host: `mysql` (Docker DNS resolves it)
-- DB name / user / pass: `signatureportal` / `sigportal` / `sigportal`
-- Base URL: `http://localhost:8090`
-- Admin email + password (min 10 chars)
-
-After install: `php bin/migrate.php` (run inside the container) applies any new SQL migrations.
-
-**Quick reference**
-
-```bash
-# Bring up the stack
-docker compose up -d
-
-# Run new migrations after pulling
-docker compose exec app php bin/migrate.php
-
-# Run the test suite
-docker compose exec app vendor/bin/phpunit
-
-# Tear down (keep DB volume)
-docker compose down
-
-# Tear down + drop DB (destructive)
-docker compose down -v
-```
-
-**OneDrive caveat (macOS)**
-
-If your project clone lives inside a OneDrive-synced folder, Docker bind mounts hit `EDEADLK` ("Resource deadlock avoided") at random — both Composer and Apache trip on it. Workaround: keep the source under `~/<something>/` (outside OneDrive) and bind-mount that.
