@@ -69,7 +69,7 @@ The five-second version:
 
 ```bash
 # 1. Get the code on the host
-git clone https://github.com/<you>/signature-portal.git
+git clone https://github.com/finezzo/signature-portal.git
 # 2. Point your subdomain at <project>/public/
 # 3. Visit https://your-domain/install.php in a browser, fill the form
 # 4. DELETE public/install.php right after the success page
@@ -107,7 +107,6 @@ All runtime config lives in `config/config.php`. The installer creates it; you c
 - Per-tenant branding (logo, accent colour) in the portal UI
 - Template version history with rollback
 - Localisation of the portal UI
-- Optional SMTP-relay companion for mobile signature rewriting
 - 2FA for local portal accounts
 
 Issues and PRs welcome.
