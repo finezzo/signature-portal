@@ -21,6 +21,48 @@ It is designed to run on **inexpensive shared PHP hosting** — IONOS, Strato, a
 - **Single-package deployment** — drop the directory into your web root, run the installer, done.
 - **No build step** — pure PHP + Twig + vanilla JS; Office.js loaded from CDN.
 
+## Screenshots
+
+<table>
+  <tr>
+    <td width="50%">
+      <a href=".github/screenshots/template-editor.png">
+        <img src=".github/screenshots/template-editor.png" alt="Template editor with TinyMCE, token menu and live preview">
+      </a>
+      <em>Browser-based template editor — TinyMCE with token catalogue, conditional blocks, drag-and-drop image upload, and a width-toggleable live preview.</em>
+    </td>
+    <td width="50%">
+      <a href=".github/screenshots/rules-list.png">
+        <img src=".github/screenshots/rules-list.png" alt="Rules list with priority and status badges">
+      </a>
+      <em>Rule engine — priorities, recipient scope (internal/external), validity windows, plus an enable/disable toggle so you can park a rule without deleting it.</em>
+    </td>
+  </tr>
+  <tr>
+    <td width="50%">
+      <a href=".github/screenshots/simulator.png">
+        <img src=".github/screenshots/simulator.png" alt="Simulator with per-rule decision trace">
+      </a>
+      <em>Simulator — pick any FROM/recipient combination (or hit live Microsoft Graph) and see exactly which rule fires and why each other rule did not.</em>
+    </td>
+    <td width="50%">
+      <a href=".github/screenshots/tenant-overview.png">
+        <img src=".github/screenshots/tenant-overview.png" alt="Tenant overview with manifest download and SSO redirect URI">
+      </a>
+      <em>Tenant overview — generate the Outlook manifest, rotate the API key, copy the SSO redirect URI for Azure, see when the API key was last rotated.</em>
+    </td>
+  </tr>
+  <tr>
+    <td width="50%">
+      <a href=".github/screenshots/image-library.png">
+        <img src=".github/screenshots/image-library.png" alt="Per-tenant image asset library">
+      </a>
+      <em>Per-tenant image library — drag-and-drop upload, copy URL into a template, MIME-sniffed and size-limited.</em>
+    </td>
+    <td width="50%"></td>
+  </tr>
+</table>
+
 ## Architecture
 
 ```
