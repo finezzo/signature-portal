@@ -1,5 +1,5 @@
 {
-    "name": "supplymarket/signature-portal",
+    "name": "finezzo/signature-portal",
     "description": "Self-hosted email signature management for Microsoft 365, designed for shared PHP hosting.",
     "type": "project",
     "license": "Apache-2.0",
