@@ -4,7 +4,7 @@
 
 SignaturePortal is an open-source alternative to commercial signature managers. It centrally manages Outlook signature templates and delivers the right one to each user at the moment they compose an email, using a lightweight Outlook Add-in.
 
-It is designed to run on **inexpensive shared PHP hosting** (tested on IONOS) — no Node.js, no Docker, no dedicated server required.
+It is designed to run on **inexpensive shared PHP hosting** — IONOS, Strato, all-inkl, HostEurope, or any LAMP-style host with mod_rewrite. No Node.js, no Docker, no dedicated server required, no shell access required at runtime.
 
 ## Features
 
@@ -24,18 +24,18 @@ It is designed to run on **inexpensive shared PHP hosting** (tested on IONOS) �
 ## Architecture
 
 ```
-                        ┌───────────────────────┐
-                        │   IONOS Shared Host   │
-                        │   ┌───────────────┐   │
-   Outlook Add-in ──────┼──▶│  Portal (PHP) │   │
-   (Office.js, browser) │   │   - Web UI    │   │
-                        │   │   - Sig API   │──┼──▶ MS Graph API
-                        │   └───────┬───────┘   │
-                        │           │           │
-                        │   ┌───────▼───────┐   │
-                        │   │   MySQL DB    │   │
-                        │   └───────────────┘   │
-                        └───────────────────────┘
+                       ┌───────────────────────┐
+                       │   Shared PHP host     │
+                       │   ┌───────────────┐   │
+   Outlook Add-in ─────┼──▶│  Portal (PHP) │   │
+   (Office.js, browser)│   │   - Web UI    │   │
+                       │   │   - Sig API   │──┼──▶ MS Graph API
+                       │   └───────┬───────┘   │
+                       │           │           │
+                       │   ┌───────▼───────┐   │
+                       │   │   MySQL DB    │   │
+                       │   └───────────────┘   │
+                       └───────────────────────┘
 ```
 
 The same PHP app serves both the management portal and the signature delivery API. Tenant configuration, templates, rules, overrides, and audit log live in MySQL. User profile data (name, title, phone, full address, etc.) is fetched live from Microsoft Graph using stored per-tenant client credentials.
@@ -59,11 +59,11 @@ Mobile clients **do not** support event-based add-ins. If you need signature rew
 - HTTPS (Outlook refuses to load add-ins over HTTP)
 - A Microsoft Entra (Azure AD) app registration **per tenant**, with the `User.Read.All` application permission (admin-consented). The same registration powers Graph signature delivery and Entra SSO.
 
-PHP extensions used: `pdo`, `pdo_mysql`, `curl`, `mbstring`, `openssl`, `sodium`, `json`, `dom`. All are default on IONOS.
+PHP extensions used: `pdo`, `pdo_mysql`, `curl`, `mbstring`, `openssl`, `sodium`, `json`, `dom`. All ship by default on every mainstream PHP host.
 
 ## Quick start
 
-A full step-by-step walkthrough — local Docker, IONOS production, Entra app setup, manifest generation, sideloading, troubleshooting — lives in [SETUP.md](SETUP.md).
+A full step-by-step walkthrough — shared-host deployment, Entra app setup, manifest generation, sideloading, troubleshooting — lives in [SETUP.md](SETUP.md).
 
 The five-second version:
 
@@ -118,7 +118,7 @@ Issues and PRs welcome.
 
 You are solely responsible for evaluating whether this software meets your operational, security, and compliance requirements. The authors make no representation that the software is suitable for processing personal data under GDPR or any other regulation; you are responsible for performing your own data-protection impact assessment, configuring access controls appropriately, and securing the credentials you store in it. The Microsoft Graph integration accesses user directory data — review your tenant's privacy and consent policies before deployment.
 
-This project is not affiliated with, endorsed by, or sponsored by Microsoft Corporation. "Outlook", "Microsoft 365", "Entra", and "Azure" are trademarks of Microsoft Corporation. "IONOS" is a trademark of IONOS SE.
+This project is not affiliated with, endorsed by, or sponsored by Microsoft Corporation. "Outlook", "Microsoft 365", "Entra", and "Azure" are trademarks of Microsoft Corporation. Other product or company names mentioned in this documentation may be trademarks of their respective owners.
 
 ## License
 
@@ -133,4 +133,4 @@ PRs welcome. Please:
 1. Open an issue first for non-trivial changes.
 2. Match existing code style (`declare(strict_types=1)`, PSR-12).
 3. Add tests for behaviour changes.
-4. Do not introduce dependencies that need a build step or shell access on the server — IONOS shared hosting is the lowest common denominator.
+4. Do not introduce dependencies that need a build step or shell access on the server — the lowest common denominator is shared PHP hosting without SSH.
