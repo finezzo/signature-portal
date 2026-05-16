@@ -124,6 +124,7 @@ final class TenantController
                 'sso_auto_provision'   => $tenant->ssoAutoProvision ? '1' : '',
                 'sso_default_role'     => $tenant->ssoDefaultRole,
                 'shared_display_mode'  => $tenant->sharedDisplayMode,
+                'shared_display_mode_per_domain' => $tenant->sharedDisplayModePerDomain,
                 'disclaimer_html'      => $tenant->disclaimerHtml ?? '',
             ],
             'errors' => [],
@@ -144,6 +145,21 @@ final class TenantController
         if (!in_array($sharedMode, ['shared', 'primary', 'derived'], true)) {
             $sharedMode = 'shared';
         }
+        // Per-domain overrides: filter the POSTed map to only the domains
+        // the tenant actually owns, and to known mode values. Empty string
+        // → no override, drop from the map.
+        $perDomain = [];
+        $postedPerDomain = is_array($body['shared_display_mode_per_domain'] ?? null)
+            ? $body['shared_display_mode_per_domain']
+            : [];
+        $ownedDomains = $this->parseDomains((string) ($body['email_domains'] ?? ''));
+        foreach ($postedPerDomain as $domain => $mode) {
+            $d = mb_strtolower(trim((string) $domain));
+            $m = (string) $mode;
+            if ($d === '' || $m === '' || !in_array($d, $ownedDomains, true)) continue;
+            if (!in_array($m, ['shared', 'primary', 'derived'], true)) continue;
+            $perDomain[$d] = $m;
+        }
         $form = [
             'slug'                => $tenant->slug, // immutable
             'name'                => trim((string) ($body['name'] ?? '')),
@@ -154,6 +170,7 @@ final class TenantController
             'sso_auto_provision'  => !empty($body['sso_auto_provision']) ? '1' : '',
             'sso_default_role'    => $defaultRole,
             'shared_display_mode' => $sharedMode,
+            'shared_display_mode_per_domain' => $perDomain,
             'disclaimer_html'     => (string) ($body['disclaimer_html'] ?? ''),
         ];
 
@@ -185,6 +202,7 @@ final class TenantController
             $form['sso_auto_provision'] === '1',
             $form['sso_default_role'],
             $form['shared_display_mode'],
+            $form['shared_display_mode_per_domain'],
             $disclaimerSanitized,
         );
 

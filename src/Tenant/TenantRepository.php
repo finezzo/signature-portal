@@ -64,6 +64,8 @@ final class TenantRepository
         bool $ssoAutoProvision,
         string $ssoDefaultRole,
         string $sharedDisplayMode,
+        /** @var array<string,string> $sharedDisplayModePerDomain */
+        array $sharedDisplayModePerDomain,
         ?string $disclaimerHtml,
     ): void {
         $stmt = $this->pdo->prepare(
@@ -77,6 +79,7 @@ final class TenantRepository
                  sso_auto_provision = :prov,
                  sso_default_role = :role,
                  shared_display_mode = :sdmode,
+                 shared_display_mode_per_domain = :sdmpd,
                  disclaimer_html = :disc
              WHERE id = :id'
         );
@@ -92,6 +95,9 @@ final class TenantRepository
             ':prov'    => $ssoAutoProvision ? 1 : 0,
             ':role'    => $ssoDefaultRole,
             ':sdmode'  => $sharedDisplayMode,
+            ':sdmpd'   => $sharedDisplayModePerDomain === []
+                ? null
+                : json_encode((object) $sharedDisplayModePerDomain, JSON_THROW_ON_ERROR),
             ':disc'    => $disclaimerHtml,
         ]);
     }

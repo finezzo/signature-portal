@@ -92,11 +92,15 @@ final class SignatureService
             return SignatureResult::error(502, 'graph lookup failed');
         }
 
+        // Per-domain override of the display mode beats the tenant default —
+        // lets `firma.de` use 'primary' (mustermann@firma.de) while
+        // `muster.de` uses 'derived' (m.mustermann@muster.de).
+        $fromDomain = mb_strtolower((string) substr(strrchr($req->fromEmail, '@') ?: '@', 1));
         $emailToken = $isSharedFrom
             ? $this->displayEmail->deriveForSharedMailbox(
                   $profile,
                   $req->fromEmail,
-                  $tenant->sharedDisplayMode,
+                  $tenant->displayModeForDomain($fromDomain),
               )
             : ($profile->mail ?? $profile->userPrincipalName);
 

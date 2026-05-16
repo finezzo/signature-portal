@@ -42,7 +42,7 @@
         </p>
         <textarea name="disclaimer_html" rows="6" placeholder="&lt;div style=&quot;font-size:11px;color:#888;border-top:1px solid #ddd;margin-top:12px;padding-top:8px;&quot;&gt;&#10;Acme GmbH · Musterstr. 1 · 12345 Berlin · HRB 99999 B · GF: Anna Beispiel&#10;&lt;/div&gt;">{{ form.disclaimer_html }}</textarea>
 
-        <label for="shared_display_mode">Shared mailbox display mode</label>
+        <label for="shared_display_mode">Default shared-mailbox display mode</label>
         <select id="shared_display_mode" name="shared_display_mode">
             <option value="shared"  {% if form.shared_display_mode == 'shared'  %}selected{% endif %}>Shared address — show the team mailbox (e.g. sales@acme.com)</option>
             <option value="primary" {% if form.shared_display_mode == 'primary' %}selected{% endif %}>Primary user — show the composer's real email (e.g. mustermann@acme.com)</option>
@@ -51,9 +51,38 @@
         <div class="muted" style="font-size:13px;">
             Controls the <code>{email}</code> token in the rendered signature when the FROM is a shared mailbox.
             <strong>Shared address</strong> is the Microsoft default — replies land in the team mailbox.
-            <strong>Primary user</strong> shows the composer's actual Graph email (the address they could log in with) — real and routable.
-            <strong>Derived personal</strong> fabricates a personal-looking alias from the user's name plus the from-domain; the address may or may not exist as a real mailbox.
+            <strong>Primary user</strong> shows the composer's actual Graph email — real and routable.
+            <strong>Derived personal</strong> fabricates an alias from the user's name plus the from-domain; the address may or may not exist as a real mailbox.
         </div>
+
+        {% if tenant.emailDomains is not empty %}
+        <h4 style="margin-top:20px;margin-bottom:8px;">Per-domain overrides</h4>
+        <p class="muted" style="font-size:13px;margin-top:0;">
+            Different domains often use different mailbox conventions — e.g. <code>firma.de</code> uses
+            <code>mustermann@firma.de</code> (Primary) while <code>muster.de</code> uses
+            <code>m.mustermann@muster.de</code> (Derived). Override the default per domain here.
+            Domains not listed fall back to the default above.
+        </p>
+        <table class="data-table" style="max-width:600px;">
+            <thead><tr><th>Domain</th><th>Mode</th></tr></thead>
+            <tbody>
+                {% for d in tenant.emailDomains %}
+                {% set selected = form.shared_display_mode_per_domain[d]|default('') %}
+                <tr>
+                    <td><code>{{ d }}</code></td>
+                    <td>
+                        <select name="shared_display_mode_per_domain[{{ d }}]">
+                            <option value=""        {% if selected == ''        %}selected{% endif %}>(use default)</option>
+                            <option value="shared"  {% if selected == 'shared'  %}selected{% endif %}>Shared address</option>
+                            <option value="primary" {% if selected == 'primary' %}selected{% endif %}>Primary user</option>
+                            <option value="derived" {% if selected == 'derived' %}selected{% endif %}>Derived personal</option>
+                        </select>
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+        {% endif %}
         {% endif %}
 
         {% if tenant %}

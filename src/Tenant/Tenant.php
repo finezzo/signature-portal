@@ -22,10 +22,49 @@ final class Tenant
         public readonly bool $ssoAutoProvision,
         public readonly string $ssoDefaultRole,
         public readonly string $sharedDisplayMode,
+        /** @var array<string,string> lowercase-domain → mode */
+        public readonly array $sharedDisplayModePerDomain,
         public readonly ?string $disclaimerHtml,
         public readonly string $createdAt,
         public readonly string $updatedAt,
     ) {}
+
+    /**
+     * Picks the display mode that should apply when the FROM mailbox is on
+     * the given domain. Per-domain override wins; otherwise the tenant's
+     * default `sharedDisplayMode`.
+     */
+    public function displayModeForDomain(string $domain): string
+    {
+        $d = mb_strtolower(trim($domain));
+        return $this->sharedDisplayModePerDomain[$d] ?? $this->sharedDisplayMode;
+    }
+
+    /**
+     * Decode the JSON column into a clean string→string map. Defensive:
+     * a malformed value just collapses to an empty map (= use default
+     * mode everywhere).
+     *
+     * @return array<string,string>
+     */
+    private static function decodeDomainModeMap(mixed $raw): array
+    {
+        if (!is_string($raw) || $raw === '') {
+            return [];
+        }
+        $decoded = json_decode($raw, true);
+        if (!is_array($decoded)) {
+            return [];
+        }
+        $out = [];
+        foreach ($decoded as $k => $v) {
+            if (!is_string($k) || !is_string($v)) continue;
+            $k = mb_strtolower(trim($k));
+            if ($k === '' || !in_array($v, ['shared', 'primary', 'derived'], true)) continue;
+            $out[$k] = $v;
+        }
+        return $out;
+    }
 
     /** @param array<string,mixed> $row */
     public static function fromRow(array $row): self
@@ -57,6 +96,7 @@ final class Tenant
             (bool) ($row['sso_auto_provision'] ?? 0),
             (string) ($row['sso_default_role'] ?? 'tenant_editor'),
             (string) ($row['shared_display_mode'] ?? 'shared'),
+            self::decodeDomainModeMap($row['shared_display_mode_per_domain'] ?? null),
             isset($row['disclaimer_html']) && $row['disclaimer_html'] !== '' ? (string) $row['disclaimer_html'] : null,
             (string) $row['created_at'],
             (string) $row['updated_at'],

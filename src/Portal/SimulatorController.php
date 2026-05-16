@@ -101,11 +101,12 @@ final class SimulatorController
                 }
 
                 if ($profile !== null) {
+                    $fromDomain = mb_strtolower((string) substr(strrchr($form['from_email'], '@') ?: '@', 1));
                     $liveEmailToken = $isSharedFrom
                         ? $this->displayEmail->deriveForSharedMailbox(
                               $profile,
                               $form['from_email'],
-                              $tenant->sharedDisplayMode,
+                              $tenant->displayModeForDomain($fromDomain),
                           )
                         : ($profile->mail ?? $profile->userPrincipalName);
                     $tokens      = TemplateRenderer::tokensFromProfile($profile, $liveEmailToken);
