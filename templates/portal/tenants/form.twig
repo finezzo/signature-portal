@@ -45,12 +45,14 @@
         <label for="shared_display_mode">Shared mailbox display mode</label>
         <select id="shared_display_mode" name="shared_display_mode">
             <option value="shared"  {% if form.shared_display_mode == 'shared'  %}selected{% endif %}>Shared address — show the team mailbox (e.g. sales@acme.com)</option>
-            <option value="derived" {% if form.shared_display_mode == 'derived' %}selected{% endif %}>Derived personal — compute the sender's personal address (e.g. s.mueller@acme.com)</option>
+            <option value="primary" {% if form.shared_display_mode == 'primary' %}selected{% endif %}>Primary user — show the composer's real email (e.g. mustermann@acme.com)</option>
+            <option value="derived" {% if form.shared_display_mode == 'derived' %}selected{% endif %}>Derived personal — compute an address from the sender's name (e.g. m.mustermann@acme.com)</option>
         </select>
         <div class="muted" style="font-size:13px;">
-            Controls the <code>{email}</code> token in the rendered signature when the FROM address is a shared mailbox.
-            "Shared address" is the Microsoft default — replies go back to the team. "Derived personal" makes the
-            shared mailbox appear personal (uses the composer's name + the from-domain).
+            Controls the <code>{email}</code> token in the rendered signature when the FROM is a shared mailbox.
+            <strong>Shared address</strong> is the Microsoft default — replies land in the team mailbox.
+            <strong>Primary user</strong> shows the composer's actual Graph email (the address they could log in with) — real and routable.
+            <strong>Derived personal</strong> fabricates a personal-looking alias from the user's name plus the from-domain; the address may or may not exist as a real mailbox.
         </div>
         {% endif %}
 

@@ -141,7 +141,7 @@ final class TenantController
             $defaultRole = 'tenant_editor';
         }
         $sharedMode = (string) ($body['shared_display_mode'] ?? 'shared');
-        if (!in_array($sharedMode, ['shared', 'derived'], true)) {
+        if (!in_array($sharedMode, ['shared', 'primary', 'derived'], true)) {
             $sharedMode = 'shared';
         }
         $form = [
