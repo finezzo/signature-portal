@@ -5,7 +5,8 @@
     </div>
 </div>
 
-{% if tenant.apiKeyEncrypted and tenant.apiKeyLastRotatedAt and (tenant.apiKeyAcknowledgedAt is null or tenant.apiKeyAcknowledgedAt < tenant.apiKeyLastRotatedAt) %}
+{% set is_tenant_admin = current_user.role in ['superadmin', 'tenant_admin'] %}
+{% if is_tenant_admin and tenant.apiKeyEncrypted and tenant.apiKeyLastRotatedAt and (tenant.apiKeyAcknowledgedAt is null or tenant.apiKeyAcknowledgedAt < tenant.apiKeyLastRotatedAt) %}
 <div class="alert alert-error" style="display:flex;align-items:center;justify-content:space-between;gap:12px;">
     <div>
         <strong>API key was rotated on {{ tenant.apiKeyLastRotatedAt }}.</strong>
@@ -25,5 +26,7 @@
     <a href="/portal/tenants/{{ tenant.id }}/overrides" class="{{ active == 'overrides' ? 'active' : '' }}">Overrides</a>
     <a href="/portal/tenants/{{ tenant.id }}/simulator" class="{{ active == 'simulator' ? 'active' : '' }}">Simulator</a>
     <a href="/portal/tenants/{{ tenant.id }}/activity"  class="{{ active == 'activity'  ? 'active' : '' }}">Activity</a>
+    {% if is_tenant_admin %}
     <a href="/portal/tenants/{{ tenant.id }}/edit"      class="{{ active == 'settings'  ? 'active' : '' }}">Settings</a>
+    {% endif %}
 </nav>
