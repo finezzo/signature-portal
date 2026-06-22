@@ -15,8 +15,15 @@ use TheNetworg\OAuth2\Client\Provider\AzureResourceOwner;
  *   2. existing local user by email (link the oid to that user the first time)
  *   3. auto-provision a new user if the tenant allows it
  *
- * Superadmins (tenant_id NULL) match by oid or email globally — useful when a
- * cross-tenant admin wants to use SSO from any tenant they own.
+ * Hard tenant boundary: matching is scoped to the tenant whose Entra app
+ * issued the token, and only after the token's `tid` claim is verified against
+ * that tenant's configured directory id. We deliberately do NOT match across
+ * into tenant-NULL (superadmin) rows: the `email`/`preferred_username` claims
+ * are attacker-controllable by anyone who administers a customer's Entra
+ * directory (the `email` optional claim is not a verified address), so a
+ * cross-tenant durchgriff would let a malicious customer admin assert a
+ * superadmin's email and take over that account. Superadmins sign in with
+ * local credentials instead.
  */
 final class SsoAuthenticator
 {
@@ -35,6 +42,20 @@ final class SsoAuthenticator
             return SsoLoginResult::failure('Token did not include an Entra object id or email address.');
         }
         $email = mb_strtolower($email);
+
+        // The token must have been issued by THIS tenant's Entra directory.
+        // Pinning the authority to the tenant GUID (see EntraProvider) already
+        // restricts this, but verifying the `tid` claim is cheap defence in
+        // depth against a misconfigured (multi-tenant) app registration.
+        $tid = $owner->getTenantId(); // 'tid' claim
+        // GUIDs are case-insensitive; Azure emits lowercase but admins may
+        // store any casing. tid is not a secret, so a normalized compare is
+        // fine (hash_equals keeps it tidy/constant-time regardless).
+        if ($tenant->entraTenantId === null
+            || !is_string($tid)
+            || !hash_equals(mb_strtolower($tenant->entraTenantId), mb_strtolower($tid))) {
+            return SsoLoginResult::failure('Token was not issued by this tenant\'s Entra directory.');
+        }
 
         $user = $this->findUserByOid($oid, $tenant->id)
             ?? $this->findUserByEmail($email, $tenant->id);
@@ -72,12 +93,11 @@ final class SsoAuthenticator
     /** @return array<string,mixed>|null */
     private function findUserByOid(string $oid, int $tenantId): ?array
     {
-        // Match either inside the tenant or globally for superadmins.
+        // Scoped strictly to this tenant — never matches tenant-NULL
+        // (superadmin) rows. See class docstring for the rationale.
         $stmt = $this->pdo->prepare(
             'SELECT * FROM users
-             WHERE entra_object_id = :oid
-               AND (tenant_id = :tid OR tenant_id IS NULL)
-             ORDER BY tenant_id IS NULL ASC
+             WHERE entra_object_id = :oid AND tenant_id = :tid
              LIMIT 1'
         );
         $stmt->execute([':oid' => $oid, ':tid' => $tenantId]);
@@ -88,11 +108,11 @@ final class SsoAuthenticator
     /** @return array<string,mixed>|null */
     private function findUserByEmail(string $email, int $tenantId): ?array
     {
+        // Scoped strictly to this tenant — never matches tenant-NULL
+        // (superadmin) rows. See class docstring for the rationale.
         $stmt = $this->pdo->prepare(
             'SELECT * FROM users
-             WHERE email = :email
-               AND (tenant_id = :tid OR tenant_id IS NULL)
-             ORDER BY tenant_id IS NULL ASC
+             WHERE email = :email AND tenant_id = :tid
              LIMIT 1'
         );
         $stmt->execute([':email' => $email, ':tid' => $tenantId]);

@@ -4,6 +4,7 @@
 {% block sub_nav %}{% include 'portal/_tenant_nav.twig' with {'tenant': tenant, 'active': 'overview'} %}{% endblock %}
 
 {% block content %}
+{% set is_tenant_admin = current_user.role in ['superadmin', 'tenant_admin'] %}
 <div class="grid-two">
     <div class="card">
         <h2>Overview</h2>
@@ -31,21 +32,25 @@
             <p>An API key is set. Last rotated: <strong>{{ tenant.apiKeyLastRotatedAt ?: 'unknown' }}</strong>.</p>
             <p class="muted" style="font-size:13px;">For security the key is never displayed after creation. Rotate to produce a new one (the old key stops working immediately and you must redistribute the manifest).</p>
         {% else %}
-            <div class="alert alert-error">No API key. Rotate to generate one.</div>
+            <div class="alert alert-error">No API key. {% if is_tenant_admin %}Rotate to generate one.{% else %}Ask a tenant admin to generate one.{% endif %}</div>
         {% endif %}
-        <form method="post" action="/portal/tenants/{{ tenant.id }}/rotate-key" class="inline"
-              onsubmit="return confirm('Rotate the API key? The old key stops working immediately.')">
-            <input type="hidden" name="_csrf" value="{{ csrf_token }}">
-            <button type="submit" class="btn btn-primary">Rotate API key</button>
-        </form>
+        {% if is_tenant_admin %}
+            <form method="post" action="/portal/tenants/{{ tenant.id }}/rotate-key" class="inline"
+                  onsubmit="return confirm('Rotate the API key? The old key stops working immediately.')">
+                <input type="hidden" name="_csrf" value="{{ csrf_token }}">
+                <button type="submit" class="btn btn-primary">Rotate API key</button>
+            </form>
 
-        <h2 style="margin-top:32px;">Outlook Add-in manifest</h2>
-        {% if tenant.apiKeyEncrypted %}
-            <p>Download the OfficeApp manifest XML for this tenant. Upload it via the M365 admin centre or sideload it into Outlook.</p>
-            <a class="btn btn-primary" href="/portal/tenants/{{ tenant.id }}/manifest.xml">Download manifest.xml</a>
-            <p class="muted" style="font-size:13px;margin-top:12px;">The manifest embeds the tenant slug and API key. Treat it as a secret.</p>
+            <h2 style="margin-top:32px;">Outlook Add-in manifest</h2>
+            {% if tenant.apiKeyEncrypted %}
+                <p>Download the OfficeApp manifest XML for this tenant. Upload it via the M365 admin centre or sideload it into Outlook.</p>
+                <a class="btn btn-primary" href="/portal/tenants/{{ tenant.id }}/manifest.xml">Download manifest.xml</a>
+                <p class="muted" style="font-size:13px;margin-top:12px;">The manifest embeds the tenant slug and API key. Treat it as a secret.</p>
+            {% else %}
+                <p class="muted">Generate an API key first.</p>
+            {% endif %}
         {% else %}
-            <p class="muted">Generate an API key first.</p>
+            <p class="muted" style="font-size:13px;">API key rotation and manifest download are restricted to tenant admins.</p>
         {% endif %}
     </div>
 </div>

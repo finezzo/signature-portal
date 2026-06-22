@@ -109,7 +109,7 @@ final class TenantController
 
     public function editForm(ServerRequestInterface $request, ResponseInterface $response, array $args): ResponseInterface
     {
-        $tenant = $this->loadTenantOr404($args, $request);
+        $tenant = $this->loadTenantForAdminOr403($args, $request);
         if ($tenant instanceof ResponseInterface) return $tenant;
 
         return $this->view->render($response, 'portal/tenants/form.twig', [
@@ -133,7 +133,7 @@ final class TenantController
 
     public function update(ServerRequestInterface $request, ResponseInterface $response, array $args): ResponseInterface
     {
-        $tenant = $this->loadTenantOr404($args, $request);
+        $tenant = $this->loadTenantForAdminOr403($args, $request);
         if ($tenant instanceof ResponseInterface) return $tenant;
 
         $body = (array) $request->getParsedBody();
@@ -234,7 +234,7 @@ final class TenantController
 
     public function rotateKey(ServerRequestInterface $request, ResponseInterface $response, array $args): ResponseInterface
     {
-        $tenant = $this->loadTenantOr404($args, $request);
+        $tenant = $this->loadTenantForAdminOr403($args, $request);
         if ($tenant instanceof ResponseInterface) return $tenant;
 
         $key = $this->tenantService->rotateApiKey($tenant->id);
@@ -245,7 +245,7 @@ final class TenantController
 
     public function acknowledgeKey(ServerRequestInterface $request, ResponseInterface $response, array $args): ResponseInterface
     {
-        $tenant = $this->loadTenantOr404($args, $request);
+        $tenant = $this->loadTenantForAdminOr403($args, $request);
         if ($tenant instanceof ResponseInterface) return $tenant;
 
         $this->tenants->acknowledgeApiKey($tenant->id);
@@ -256,7 +256,7 @@ final class TenantController
 
     public function manifest(ServerRequestInterface $request, ResponseInterface $response, array $args): ResponseInterface
     {
-        $tenant = $this->loadTenantOr404($args, $request);
+        $tenant = $this->loadTenantForAdminOr403($args, $request);
         if ($tenant instanceof ResponseInterface) return $tenant;
 
         $apiKey = $this->tenantService->getApiKeyPlaintext($tenant);
@@ -282,6 +282,25 @@ final class TenantController
     /** @return \App\Tenant\Tenant|ResponseInterface */
     private function loadTenantOr404(array $args, ServerRequestInterface $request): \App\Tenant\Tenant|ResponseInterface
     {
+        return $this->loadTenant($args, $request, adminOnly: false);
+    }
+
+    /**
+     * Like {@see loadTenantOr404} but requires tenant_admin (or superadmin).
+     * Used for actions that expose or change secrets / security settings, so
+     * a tenant_editor cannot rotate or read the API key, rewrite the Entra
+     * client secret, or change SSO configuration.
+     *
+     * @return \App\Tenant\Tenant|ResponseInterface
+     */
+    private function loadTenantForAdminOr403(array $args, ServerRequestInterface $request): \App\Tenant\Tenant|ResponseInterface
+    {
+        return $this->loadTenant($args, $request, adminOnly: true);
+    }
+
+    /** @return \App\Tenant\Tenant|ResponseInterface */
+    private function loadTenant(array $args, ServerRequestInterface $request, bool $adminOnly): \App\Tenant\Tenant|ResponseInterface
+    {
         $id     = (int) ($args['id'] ?? 0);
         $tenant = $id > 0 ? $this->tenants->find($id) : null;
         if ($tenant === null) {
@@ -289,8 +308,11 @@ final class TenantController
             $resp->getBody()->write('Tenant not found.');
             return $resp;
         }
-        $user = (array) $request->getAttribute('current_user');
-        if (!AccessControl::canAccessTenant($user, $tenant->id)) {
+        $user    = (array) $request->getAttribute('current_user');
+        $allowed = $adminOnly
+            ? AccessControl::canAdministerTenant($user, $tenant->id)
+            : AccessControl::canAccessTenant($user, $tenant->id);
+        if (!$allowed) {
             return $this->forbidden(
                 (new \Slim\Psr7\Factory\ResponseFactory())->createResponse()
             );

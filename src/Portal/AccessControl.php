@@ -19,11 +19,41 @@ final class AccessControl
     }
 
     /** @param array<string,mixed> $user */
+    public static function isTenantAdmin(array $user): bool
+    {
+        return ($user['role'] ?? null) === 'tenant_admin';
+    }
+
+    /**
+     * Read/content access to a tenant: superadmins always, otherwise any user
+     * (admin or editor) scoped to that tenant. Use for viewing and for
+     * editing tenant *content* (templates, rules, overrides, assets).
+     *
+     * @param array<string,mixed> $user
+     */
     public static function canAccessTenant(array $user, int $tenantId): bool
     {
         if (self::isSuperadmin($user)) {
             return true;
         }
         return ((int) ($user['tenant_id'] ?? 0)) === $tenantId;
+    }
+
+    /**
+     * Administrative access to a tenant: superadmins always, otherwise only
+     * tenant_admin scoped to that tenant. Gate anything that touches secrets
+     * or security posture behind this — API key rotation/disclosure (manifest
+     * download), Entra client secret, SSO settings, email domains.
+     * tenant_editor is deliberately limited to content and must NOT pass here.
+     *
+     * @param array<string,mixed> $user
+     */
+    public static function canAdministerTenant(array $user, int $tenantId): bool
+    {
+        if (self::isSuperadmin($user)) {
+            return true;
+        }
+        return self::isTenantAdmin($user)
+            && ((int) ($user['tenant_id'] ?? 0)) === $tenantId;
     }
 }
