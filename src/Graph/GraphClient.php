@@ -68,7 +68,10 @@ final class GraphClient
             if ($status === 401) {
                 $this->cache->purge($tenant->id);
             }
-            throw new GraphException("Graph user lookup failed (HTTP {$status}) for '{$userPrincipalName}'.", 0, $e);
+            // Do not embed $userPrincipalName in the message — it is logged
+            // downstream (SignatureService), and CLAUDE.md forbids logging full
+            // email addresses. The HTTP status is the useful diagnostic.
+            throw new GraphException("Graph user lookup failed (HTTP {$status}).", 0, $e);
         } catch (GuzzleException $e) {
             throw new GraphException("Graph network error: " . $e->getMessage(), 0, $e);
         }

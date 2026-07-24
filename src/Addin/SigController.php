@@ -19,7 +19,7 @@ use Psr\Http\Message\ServerRequestInterface;
  *     &language=<bcp47>        (optional — overrides Graph preferredLanguage)
  *     &mailbox_type=shared|personal  (optional override; otherwise auto)
  *
- *   Auth: X-Sig-Key: <key>  (preferred) OR ?key=<key> (fallback)
+ *   Auth: X-Sig-Key: <key>  (header only — no query-string fallback)
  *
  *   Responses:
  *     200 text/html with X-Sig-Shared: true|false  — render this signature
@@ -37,10 +37,11 @@ final class SigController
     {
         $q = $request->getQueryParams();
 
+        // Key is accepted ONLY via the X-Sig-Key header. A `?key=` query
+        // fallback was removed: query strings are written verbatim to Apache
+        // access logs on shared hosting, which would leak the long-lived tenant
+        // secret. The add-in (commands.js) already sends the header.
         $key = $request->getHeaderLine('X-Sig-Key');
-        if ($key === '') {
-            $key = (string) ($q['key'] ?? '');
-        }
 
         $req = new SignatureRequest(
             tenantSlug:   trim((string) ($q['tenant']  ?? '')),

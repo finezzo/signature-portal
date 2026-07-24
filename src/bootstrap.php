@@ -122,7 +122,10 @@ return (static function (): \Slim\App {
 
     // Phase 3 — Graph + signature pipeline
     $container->set(GuzzleHttp::class,         fn() => new GuzzleHttp(['http_errors' => true]));
-    $container->set(TokenCache::class,         fn(Container $c) => new TokenCache($c->get(\PDO::class)));
+    $container->set(TokenCache::class,         fn(Container $c) => new TokenCache(
+        $c->get(\PDO::class),
+        $c->get(Encryption::class),
+    ));
     $container->set(GraphClient::class,        fn(Container $c) => new GraphClient(
         $c->get(GuzzleHttp::class),
         $c->get(TokenCache::class),

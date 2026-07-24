@@ -90,10 +90,19 @@ The PHP user needs write access to:
 
 Open `https://signatures.example.com/install.php` in a browser.
 
+**Install token.** On first load the installer writes a one-time secret to
+`config/.install_token` on the server (outside the public web root, so it is
+never reachable over HTTP) and asks you to paste it into the form. Retrieve the
+file's contents via SFTP or your hosting file manager and copy them into the
+**Install token** field. This proves you control the server and stops anyone who
+finds the not-yet-installed instance from claiming it before you. The token is
+deleted automatically once installation succeeds.
+
 Fill in:
 
 | Field | Value |
 |---|---|
+| Install token | contents of `config/.install_token` (see above) |
 | DB host | the hostname from step 2 (not `localhost` on shared hosting!) |
 | DB port | `3306` |
 | DB name / user / pass | from step 2 |

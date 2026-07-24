@@ -78,24 +78,43 @@ final class UserProfile
      */
     public function tokens(?string $emailOverride = null): array
     {
+        // Every value is HTML-escaped here, at the single point where the token
+        // map is produced, because the renderer substitutes tokens verbatim
+        // (strtr, no encoding) into already-sanitized signature HTML. The
+        // template passes through HTML Purifier on save, but the token *values*
+        // come from Microsoft Graph — displayName, jobTitle, aboutMe, etc. are
+        // often self-service attributes, so an unescaped value like
+        // `<img src=x onerror=…>` would inject markup into the delivered mail,
+        // bypassing Purifier entirely. Escaping at the source keeps every
+        // current and future Graph attribute safe by default.
+        //
+        // `phone_lines` is the sole exception: it is assembled as HTML
+        // (<br>-separated, each value individually escaped) and must not be
+        // re-escaped here, or the `<br>` would show up literally.
         $tokens = [];
 
         // 1. Pass through every Graph property in snake_case form.
         foreach ($this->raw as $key => $value) {
-            $tokens[self::camelToSnake((string) $key)] = self::stringifyValue($value);
+            $tokens[self::camelToSnake((string) $key)] = self::esc(self::stringifyValue($value));
         }
 
         // 2. Convenience aliases / computed tokens, retained for back-compat.
-        $tokens['display_name']   = (string) ($this->displayName
-            ?? trim(($this->givenName ?? '') . ' ' . ($this->surname ?? '')));
-        $tokens['first_name']     = (string) ($this->givenName ?? '');
-        $tokens['last_name']      = (string) ($this->surname ?? '');
-        $tokens['email']          = (string) ($emailOverride ?? $this->mail ?? $this->userPrincipalName);
-        $tokens['job_title_line'] = (string) ($this->jobTitle ?? '');
+        $tokens['display_name']   = self::esc((string) ($this->displayName
+            ?? trim(($this->givenName ?? '') . ' ' . ($this->surname ?? ''))));
+        $tokens['first_name']     = self::esc((string) ($this->givenName ?? ''));
+        $tokens['last_name']      = self::esc((string) ($this->surname ?? ''));
+        $tokens['email']          = self::esc((string) ($emailOverride ?? $this->mail ?? $this->userPrincipalName));
+        $tokens['job_title_line'] = self::esc((string) ($this->jobTitle ?? ''));
         $tokens['phone_lines']    = self::buildPhoneLines($this->mobilePhone, $this->businessPhones);
-        $tokens['full_address']   = self::buildFullAddress($this->raw);
+        $tokens['full_address']   = self::esc(self::buildFullAddress($this->raw));
 
         return $tokens;
+    }
+
+    /** HTML-escape a token value for safe substitution into signature markup. */
+    private static function esc(string $value): string
+    {
+        return htmlspecialchars($value, ENT_QUOTES | ENT_HTML5, 'UTF-8');
     }
 
     /**

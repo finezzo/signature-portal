@@ -64,9 +64,12 @@ final class AuthController
             // The lockout itself still applies; it's just not advertised.
             $this->session->set('flash_login_error', 'Invalid email or password.');
             if ($result->state === \App\Auth\AuthAttemptResult::STATE_LOCKED) {
+                // Never log the email itself (see CLAUDE.md logging policy) — a
+                // one-way hash is enough to correlate repeated lockouts of the
+                // same account across log lines without exposing the address.
                 error_log(
-                    '[login] lockout active for email='
-                    . mb_strtolower(trim($email))
+                    '[login] lockout active for account='
+                    . substr(hash('sha256', mb_strtolower(trim($email))), 0, 12)
                     . ' until=' . ($result->lockedUntil ?? 'unknown')
                 );
             }

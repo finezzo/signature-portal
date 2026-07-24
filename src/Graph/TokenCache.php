@@ -3,7 +3,9 @@ declare(strict_types=1);
 
 namespace App\Graph;
 
+use App\Crypto\Encryption;
 use PDO;
+use RuntimeException;
 
 /**
  * Per-tenant cache for Microsoft Graph access tokens.
@@ -12,12 +14,20 @@ use PDO;
  * conservative safety margin baked in by the caller, then read them back
  * with a small re-check window so the request-handler doesn't hand out a
  * token that is about to expire.
+ *
+ * The token is a bearer credential for the whole Entra tenant (User.Read.All),
+ * so it is encrypted at rest with the same APP_KEY-backed libsodium box used
+ * for the client secret — a DB read (SQLi, backup leak, host access) then
+ * yields ciphertext rather than a live Graph token.
  */
 final class TokenCache
 {
     private const SAFETY_WINDOW_SECONDS = 30;
 
-    public function __construct(private readonly PDO $pdo) {}
+    public function __construct(
+        private readonly PDO $pdo,
+        private readonly Encryption $encryption,
+    ) {}
 
     public function get(int $tenantId): ?string
     {
@@ -33,7 +43,14 @@ final class TokenCache
         if ((int) $row['exp_ts'] - self::SAFETY_WINDOW_SECONDS <= time()) {
             return null;
         }
-        return (string) $row['access_token'];
+        try {
+            return $this->encryption->decrypt((string) $row['access_token']);
+        } catch (RuntimeException) {
+            // Legacy plaintext row, tampered ciphertext, or APP_KEY rotation:
+            // treat as a cache miss so the caller fetches a fresh token and
+            // overwrites the row with a valid encrypted value.
+            return null;
+        }
     }
 
     /** @param int $ttlSeconds Lifetime of the token, in seconds. */
@@ -50,7 +67,7 @@ final class TokenCache
         );
         $stmt->execute([
             ':tid' => $tenantId,
-            ':tok' => $accessToken,
+            ':tok' => $this->encryption->encrypt($accessToken),
             ':exp' => time() + $effectiveTtl,
         ]);
     }

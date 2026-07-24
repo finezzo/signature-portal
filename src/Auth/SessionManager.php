@@ -17,10 +17,19 @@ final class SessionManager
 
         $name     = (string) $this->config->get('session.name', 'sigportal_sid');
         $lifetime = ((int) $this->config->get('session.lifetime', 120)) * 60;
-        $secure   = str_starts_with(
-            (string) $this->config->get('base_url', ''),
-            'https://'
-        );
+        // Secure flag if EITHER the configured base_url is https OR the request
+        // actually arrived over TLS — so a mis-typed/http base_url can't silently
+        // ship the session cookie in the clear on an HTTPS deployment. We only
+        // ever add Secure here, never remove it (local http dev stays working).
+        $secure   = str_starts_with((string) $this->config->get('base_url', ''), 'https://')
+            || (($_SERVER['HTTPS'] ?? '') !== '' && ($_SERVER['HTTPS'] ?? 'off') !== 'off')
+            || (($_SERVER['HTTP_X_FORWARDED_PROTO'] ?? '') === 'https');
+
+        // Reject a session ID the server never issued: an unknown ID starts a
+        // fresh empty session instead of adopting the value from the cookie.
+        // This closes the classic session-fixation vector where an attacker
+        // pre-sets the cookie and waits for the victim to authenticate under it.
+        ini_set('session.use_strict_mode', '1');
 
         session_name($name);
         session_set_cookie_params([
@@ -37,6 +46,12 @@ final class SessionManager
     {
         if (session_status() === PHP_SESSION_ACTIVE) {
             session_regenerate_id(true);
+            // regenerate() runs on privilege change (login). session_regenerate_id
+            // keeps the session *data*, so drop the CSRF token as well — a token
+            // an attacker learned from a shared/fixated pre-login session must
+            // not survive into the authenticated session. Csrf::token() mints a
+            // fresh one on next use (key mirrors App\Auth\Csrf::SESSION_KEY).
+            unset($_SESSION['_csrf']);
         }
     }
 

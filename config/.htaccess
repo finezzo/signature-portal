@@ -1,0 +1,11 @@
+# Defense-in-depth: config/ lives OUTSIDE the public/ docroot and must never be
+# web-served. If the docroot is ever misconfigured to the repo root (a known
+# IONOS foot-gun), this denies HTTP access to config.php (APP_KEY + DB creds)
+# and the one-time .install_token. Covers both Apache 2.2 and 2.4.
+<IfModule mod_authz_core.c>
+    Require all denied
+</IfModule>
+<IfModule !mod_authz_core.c>
+    Order allow,deny
+    Deny from all
+</IfModule>

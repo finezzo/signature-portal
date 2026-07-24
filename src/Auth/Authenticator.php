@@ -24,6 +24,17 @@ final class Authenticator
     public const FAILURE_WINDOW_MINUTES = 10;
     public const LOCKOUT_DURATION_MINUTES = 15;
 
+    /**
+     * A fixed, valid bcrypt hash (cost 10, matching PASSWORD_BCRYPT) that no
+     * real password produces. It is verified against on the user-not-found
+     * path solely to equalize response timing — without it, "no such account"
+     * returns in microseconds while "account exists, wrong password" spends
+     * ~100 ms in bcrypt, letting an attacker enumerate valid portal accounts.
+     * It is not a credential — no password produces it and it grants nothing.
+     */
+    // nosemgrep: generic.secrets.security.detected-bcrypt-hash.detected-bcrypt-hash
+    private const DUMMY_HASH = '$2y$10$gUuEO/nH9k62RQI7Od/4m.fbl8G18X6j8kmU0wgx97wxr2A5KlD7m';
+
     public function __construct(
         private readonly PDO $pdo,
         private readonly PasswordHasher $hasher,
@@ -41,6 +52,9 @@ final class Authenticator
         $user = $stmt->fetch();
 
         if ($user === false || empty($user['password_hash'])) {
+            // Burn the same time a real bcrypt verify would, so the response
+            // time does not reveal whether the account exists (or is SSO-only).
+            $this->hasher->verify($password, self::DUMMY_HASH);
             return AuthAttemptResult::badCredentials();
         }
 
