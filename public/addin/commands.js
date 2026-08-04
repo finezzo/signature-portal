@@ -1,10 +1,10 @@
 /**
  * SignaturePortal — Outlook Add-in handler.
  *
- * Registered as functions for three LaunchEvents declared in the manifest:
- *   - OnNewMessageCompose       (Mailbox 1.10+)
- *   - OnMessageFromChange       (Mailbox 1.14+)
- *   - OnMessageRecipientsChange (Mailbox 1.13+)
+ * Registered as functions for the LaunchEvents declared in the manifest:
+ *   - OnNewMessageCompose   (Mailbox 1.10+) — initial signature on compose
+ *   - OnMessageFromChanged  (Mailbox 1.13+) — re-fetch when the FROM address
+ *     changes (shared-mailbox switch), incl. popped-out compose windows
  *
  * Tenant slug and API key are read from the URL query string of this
  * file (the manifest embeds both in <bt:Url id="commands.url" .../>).
@@ -37,13 +37,18 @@
     var TENANT = QUERY.tenant || "";
     var API_KEY = QUERY.key || "";
 
-    Office.onReady(function () {
-        if (Office.actions && Office.actions.associate) {
-            Office.actions.associate("onNewMessageComposeHandler", onNewMessageComposeHandler);
-        }
-    });
-
     function onNewMessageComposeHandler(event) { runWithSignature(event); }
+    function onMessageFromChangedHandler(event) { runWithSignature(event); }
+
+    // IMPORTANT: associate at top level, NOT inside Office.onReady(). In
+    // classic Outlook on Windows the launch-event runtime executes handlers
+    // without ever running Office.onReady()/Office.initialize, so handlers
+    // associated there would never be registered (documented in Microsoft's
+    // event-based activation guide).
+    if (typeof Office !== "undefined" && Office.actions && Office.actions.associate) {
+        Office.actions.associate("onNewMessageComposeHandler", onNewMessageComposeHandler);
+        Office.actions.associate("onMessageFromChangedHandler", onMessageFromChangedHandler);
+    }
 
     function runWithSignature(event) {
         if (!TENANT || !API_KEY) {

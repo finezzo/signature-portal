@@ -12,10 +12,11 @@ use App\Tenant\Tenant;
  *
  *   - VersionOverrides V1_0   → manual ribbon button (MessageComposeCommandSurface)
  *     so users can re-apply the signature on demand. Requires Mailbox 1.3+.
- *   - VersionOverrides V1_1   → event-based auto-activation via OnNewMessageCompose,
+ *   - VersionOverrides V1_1   → event-based auto-activation via
+ *     OnNewMessageCompose + OnMessageFromChanged (re-fetch on FROM switch),
  *     plus a Runtimes block declaring a WebView runtime for new clients
  *     (Outlook on the web / Mac / new Windows) and a JS-only override for the
- *     classic Windows client. Requires Mailbox 1.10+.
+ *     classic Windows client. Requires Mailbox 1.13+.
  *
  * The Runtimes block is what makes event-based add-ins install on classic
  * Outlook — without it the manifest validates but events never fire.
@@ -55,7 +56,7 @@ final class ManifestGenerator
     xmlns:bt="http://schemas.microsoft.com/office/officeappbasictypes/1.0"
     xsi:type="MailApp">
   <Id>{$e($guid)}</Id>
-  <Version>1.0.0.0</Version>
+  <Version>1.1.0.0</Version>
   <ProviderName>SignaturePortal</ProviderName>
   <DefaultLocale>en-US</DefaultLocale>
   <DisplayName DefaultValue="{$e($displayName)}"/>
@@ -141,7 +142,10 @@ final class ManifestGenerator
     </Resources>
     <VersionOverrides xmlns="http://schemas.microsoft.com/office/mailappversionoverrides/1.1" xsi:type="VersionOverridesV1_1">
       <Requirements>
-        <bt:Sets DefaultMinVersion="1.10">
+        <!-- 1.13 is required by OnMessageFromChanged (per the Microsoft signature
+             sample). Clients below 1.13 (pre-2023 builds) fall back to the
+             VersionOverridesV1_0 manual Refresh button above. -->
+        <bt:Sets DefaultMinVersion="1.13">
           <bt:Set Name="Mailbox"/>
         </bt:Sets>
       </Requirements>
@@ -158,6 +162,10 @@ final class ManifestGenerator
             <ExtensionPoint xsi:type="LaunchEvent">
               <LaunchEvents>
                 <LaunchEvent Type="OnNewMessageCompose" FunctionName="onNewMessageComposeHandler"/>
+                <!-- Re-fetch the signature whenever the user changes the FROM
+                     address (e.g. switching to a shared mailbox) — including in
+                     popped-out compose windows, where no new-compose event fires. -->
+                <LaunchEvent Type="OnMessageFromChanged" FunctionName="onMessageFromChangedHandler"/>
               </LaunchEvents>
               <SourceLocation resid="WebViewRuntime.Url"/>
             </ExtensionPoint>
