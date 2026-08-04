@@ -66,6 +66,20 @@ final class SsoAuthenticator
                     'Your account is not provisioned in this tenant. Ask an administrator to add you first.'
                 );
             }
+            // users.email and users.entra_object_id are globally unique. If this
+            // identity already belongs to a row we did NOT match above — a
+            // superadmin (tenant_id NULL, who signs in locally) or a user in a
+            // different tenant — auto-provisioning would hit that unique
+            // constraint and throw. Detect it and return a clear message
+            // instead of letting the INSERT blow up into a 500.
+            if ($this->identityUsedElsewhere($email, $oid, $tenant->id)) {
+                return SsoLoginResult::failure(
+                    'This Microsoft account (or its email address) already belongs to another '
+                    . 'SignaturePortal user and cannot be created automatically in this tenant. '
+                    . 'If this is your superadmin account, sign in with your local password instead; '
+                    . 'otherwise ask an administrator to add you to this tenant.'
+                );
+            }
             $user = $this->createUser($tenant, $email, $oid, $name);
         } else {
             if (empty($user['entra_object_id'])) {
@@ -118,6 +132,24 @@ final class SsoAuthenticator
         $stmt->execute([':email' => $email, ':tid' => $tenantId]);
         $row = $stmt->fetch();
         return $row === false ? null : $row;
+    }
+
+    /**
+     * True if this email or Entra object id already belongs to a user that the
+     * tenant-scoped lookups above would NOT have matched — i.e. a superadmin
+     * (tenant_id NULL) or a user in another tenant. Both columns are globally
+     * unique, so provisioning over such a row would violate the constraint.
+     */
+    private function identityUsedElsewhere(string $email, string $oid, int $tenantId): bool
+    {
+        $stmt = $this->pdo->prepare(
+            'SELECT 1 FROM users
+             WHERE (email = :email OR entra_object_id = :oid)
+               AND (tenant_id IS NULL OR tenant_id <> :tid)
+             LIMIT 1'
+        );
+        $stmt->execute([':email' => $email, ':oid' => $oid, ':tid' => $tenantId]);
+        return $stmt->fetch() !== false;
     }
 
     private function linkOidToUser(int $userId, string $oid): void

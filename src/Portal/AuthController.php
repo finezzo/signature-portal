@@ -148,7 +148,19 @@ final class AuthController
             return $response->withHeader('Location', '/portal/login')->withStatus(302);
         }
 
-        $result = $this->sso->loginFromAzureOwner($tenant, $owner);
+        try {
+            $result = $this->sso->loginFromAzureOwner($tenant, $owner);
+        } catch (Throwable $e) {
+            // Last-resort net so no SSO edge case can surface as a raw 500.
+            // Log the exception class only — never $e->getMessage(), which for a
+            // DB constraint violation would contain the offending email address.
+            error_log('[sso] login failed for tenant ' . $tenant->slug . ' (' . $e::class . ')');
+            $this->session->set(
+                'flash_login_error',
+                'SSO sign-in could not be completed. Please try again or contact an administrator.'
+            );
+            return $response->withHeader('Location', '/portal/login')->withStatus(302);
+        }
         if (!$result->ok) {
             $this->session->set('flash_login_error', $result->error ?? 'SSO login was rejected.');
             return $response->withHeader('Location', '/portal/login')->withStatus(302);
