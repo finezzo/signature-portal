@@ -40,14 +40,26 @@
     function onNewMessageComposeHandler(event) { runWithSignature(event); }
     function onMessageFromChangedHandler(event) { runWithSignature(event); }
 
-    // IMPORTANT: associate at top level, NOT inside Office.onReady(). In
-    // classic Outlook on Windows the launch-event runtime executes handlers
-    // without ever running Office.onReady()/Office.initialize, so handlers
-    // associated there would never be registered (documented in Microsoft's
-    // event-based activation guide).
-    if (typeof Office !== "undefined" && Office.actions && Office.actions.associate) {
+    function associateHandlers() {
+        if (typeof Office === "undefined" || !Office.actions || !Office.actions.associate) {
+            return;
+        }
         Office.actions.associate("onNewMessageComposeHandler", onNewMessageComposeHandler);
         Office.actions.associate("onMessageFromChangedHandler", onMessageFromChangedHandler);
+    }
+
+    // Register handlers BOTH immediately and in Office.onReady():
+    //  - Classic Outlook on Windows runs launch-event handlers without ever
+    //    executing Office.onReady(), so top-level registration is required
+    //    there (documented in Microsoft's event-based activation guide).
+    //  - In the browser runtime (Mac, web, new Windows) Office.actions may not
+    //    be initialized yet while this file is being parsed; registering only
+    //    at top level then silently does nothing. Re-associating in onReady
+    //    covers that case (and was the previously working behavior on Mac).
+    //  Associating the same name twice is harmless — the mapping is identical.
+    associateHandlers();
+    if (typeof Office !== "undefined" && typeof Office.onReady === "function") {
+        Office.onReady(function () { associateHandlers(); });
     }
 
     function runWithSignature(event) {
