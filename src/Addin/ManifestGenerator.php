@@ -28,6 +28,14 @@ use App\Tenant\Tenant;
  */
 final class ManifestGenerator
 {
+    /**
+     * Manifest version, also appended as a `v=` cache-buster to every runtime
+     * URL. Outlook's WebView caches those files hard; a changed URL forces a
+     * fresh fetch on clients that still hold an old copy. Bump this on every
+     * release that touches the manifest or the add-in runtime files.
+     */
+    private const VERSION = '1.1.1.0';
+
     public function __construct(private readonly string $baseUrl) {}
 
     public function build(Tenant $tenant, string $apiKeyPlaintext): string
@@ -36,13 +44,15 @@ final class ManifestGenerator
         $guid        = $tenant->manifestGuid ?? '00000000-0000-4000-8000-000000000000';
         $displayName = "Signatures — {$tenant->name}";
         $description = 'Applies the correct corporate signature on compose.';
+        $version     = self::VERSION;
 
         $query       = '?tenant=' . rawurlencode($tenant->slug)
-                     . '&key='    . rawurlencode($apiKeyPlaintext);
+                     . '&key='    . rawurlencode($apiKeyPlaintext)
+                     . '&v='      . rawurlencode(self::VERSION);
 
         $cmdsUrl     = "{$base}/addin/commands.html{$query}";
         $jsUrl       = "{$base}/addin/commands.js{$query}";
-        $taskpaneUrl = "{$base}/addin/taskpane.html";
+        $taskpaneUrl = "{$base}/addin/taskpane.html?v=" . rawurlencode(self::VERSION);
         $icon64      = "{$base}/addin/icon-64.png";
         $icon128     = "{$base}/addin/icon-128.png";
 
@@ -56,7 +66,7 @@ final class ManifestGenerator
     xmlns:bt="http://schemas.microsoft.com/office/officeappbasictypes/1.0"
     xsi:type="MailApp">
   <Id>{$e($guid)}</Id>
-  <Version>1.1.0.0</Version>
+  <Version>{$e($version)}</Version>
   <ProviderName>SignaturePortal</ProviderName>
   <DefaultLocale>en-US</DefaultLocale>
   <DisplayName DefaultValue="{$e($displayName)}"/>

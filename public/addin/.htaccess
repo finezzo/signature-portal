@@ -1,0 +1,8 @@
+# Add-in runtime files must never be served stale: Outlook's WebView caches
+# them aggressively, and a stale commands.js after an update breaks signature
+# insertion silently (no error shown to the user). "no-cache" still permits
+# conditional requests (ETag / Last-Modified -> 304), so clients revalidate
+# cheaply on every load instead of reusing an outdated copy.
+<IfModule mod_headers.c>
+    Header set Cache-Control "no-cache, must-revalidate"
+</IfModule>
