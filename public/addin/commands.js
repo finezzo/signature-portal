@@ -2,9 +2,11 @@
  * SignaturePortal — Outlook Add-in handler.
  *
  * Registered as functions for the LaunchEvents declared in the manifest:
- *   - OnNewMessageCompose   (Mailbox 1.10+) — initial signature on compose
- *   - OnMessageFromChanged  (Mailbox 1.13+) — re-fetch when the FROM address
- *     changes (shared-mailbox switch), incl. popped-out compose windows
+ *   - OnNewMessageCompose        (Mailbox 1.10+) — initial signature on compose
+ *   - OnMessageFromChanged       (Mailbox 1.13+) — re-fetch when the FROM
+ *     address changes (shared-mailbox switch), incl. popped-out windows
+ *   - OnMessageRecipientsChanged (Mailbox 1.11+) — re-fetch when To/Cc/Bcc
+ *     change, because rules can be scoped by recipient
  *
  * Tenant slug and API key are read from the URL query string of this
  * file (the manifest embeds both in <bt:Url id="commands.url" .../>).
@@ -37,8 +39,9 @@
     var TENANT = QUERY.tenant || "";
     var API_KEY = QUERY.key || "";
 
-    function onNewMessageComposeHandler(event) { runWithSignature(event); }
-    function onMessageFromChangedHandler(event) { runWithSignature(event); }
+    function onNewMessageComposeHandler(event) { runWithSignature(event, false); }
+    function onMessageFromChangedHandler(event) { runWithSignature(event, false); }
+    function onMessageRecipientsChangedHandler(event) { runWithSignature(event, true); }
 
     function associateHandlers() {
         if (typeof Office === "undefined" || !Office.actions || !Office.actions.associate) {
@@ -46,6 +49,7 @@
         }
         Office.actions.associate("onNewMessageComposeHandler", onNewMessageComposeHandler);
         Office.actions.associate("onMessageFromChangedHandler", onMessageFromChangedHandler);
+        Office.actions.associate("onMessageRecipientsChangedHandler", onMessageRecipientsChangedHandler);
     }
 
     // Register handlers BOTH immediately and in Office.onReady():
@@ -62,7 +66,15 @@
         Office.onReady(function () { associateHandlers(); });
     }
 
-    function runWithSignature(event) {
+    // Last context we fetched a signature for, e.g. "from@x|a@y,b@z". The
+    // recipients event fires on every To/Cc/Bcc edit; when the runtime stays
+    // alive between events (browser runtime keeps it for the compose session)
+    // this skips fetches whose outcome cannot differ. In the short-lived
+    // classic-Windows runtime the variable resets per event — worst case is
+    // one extra fetch, never a missing one.
+    var lastContextKey = null;
+
+    function runWithSignature(event, skipIfUnchanged) {
         if (!TENANT || !API_KEY) {
             // Manifest is malformed / not regenerated after a key rotation.
             // Fail open (do nothing) rather than block the user.
@@ -70,6 +82,11 @@
         }
         try {
             collectContext(function (ctx) {
+                var key = ctx.fromEmail + "|" + ctx.recipients.join(",");
+                if (skipIfUnchanged && key === lastContextKey) {
+                    return event.completed();
+                }
+                lastContextKey = key;
                 fetchSignature(ctx, function (html, isShared) {
                     if (!html) {
                         // 204 no-match — leave whatever signature is already

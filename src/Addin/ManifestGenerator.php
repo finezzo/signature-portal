@@ -34,7 +34,7 @@ final class ManifestGenerator
      * fresh fetch on clients that still hold an old copy. Bump this on every
      * release that touches the manifest or the add-in runtime files.
      */
-    private const VERSION = '1.1.1.0';
+    private const VERSION = '1.2.0.0';
 
     public function __construct(private readonly string $baseUrl) {}
 
@@ -176,10 +176,27 @@ final class ManifestGenerator
                      address (e.g. switching to a shared mailbox) — including in
                      popped-out compose windows, where no new-compose event fires. -->
                 <LaunchEvent Type="OnMessageFromChanged" FunctionName="onMessageFromChangedHandler"/>
+                <!-- Re-fetch when recipients change: rules can be scoped by
+                     recipient (internal/external), so the matching template may
+                     differ once the To/Cc/Bcc fields are filled in. -->
+                <LaunchEvent Type="OnMessageRecipientsChanged" FunctionName="onMessageRecipientsChangedHandler"/>
               </LaunchEvents>
               <SourceLocation resid="WebViewRuntime.Url"/>
             </ExtensionPoint>
           </DesktopFormFactor>
+          <!-- Outlook mobile (iOS/Android). Event-based signatures work there
+               for Exchange Online accounts; shared-mailbox FROM switching is
+               not supported on mobile, so the recipients event is omitted to
+               mirror Microsoft's signature sample. -->
+          <MobileFormFactor>
+            <ExtensionPoint xsi:type="LaunchEvent">
+              <LaunchEvents>
+                <LaunchEvent Type="OnNewMessageCompose" FunctionName="onNewMessageComposeHandler"/>
+                <LaunchEvent Type="OnMessageFromChanged" FunctionName="onMessageFromChangedHandler"/>
+              </LaunchEvents>
+              <SourceLocation resid="WebViewRuntime.Url"/>
+            </ExtensionPoint>
+          </MobileFormFactor>
         </Host>
       </Hosts>
       <Resources>

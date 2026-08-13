@@ -25,6 +25,8 @@
         <button type="submit" class="btn btn-primary">Sign in</button>
     </form>
 
+    <p style="margin-top:12px;"><a href="/portal/password/forgot" class="muted">Forgot password?</a></p>
+
     {% if sso_tenants is not empty %}
         <div class="login-sep">or</div>
         {% for t in sso_tenants %}

@@ -102,8 +102,11 @@ final class UserRepository
 
     public function setPassword(int $id, string $hash): void
     {
-        $this->pdo->prepare('UPDATE users SET password_hash = :h WHERE id = :id')
-            ->execute([':h' => $hash, ':id' => $id]);
+        // password_changed_at is the session-invalidation epoch: bumping it
+        // logs the user out of every existing session (see AuthMiddleware).
+        $this->pdo->prepare(
+            'UPDATE users SET password_hash = :h, password_changed_at = NOW() WHERE id = :id'
+        )->execute([':h' => $hash, ':id' => $id]);
     }
 
     public function unlock(int $id): void

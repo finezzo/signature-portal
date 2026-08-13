@@ -3,6 +3,7 @@ declare(strict_types=1);
 
 namespace App\Addin;
 
+use App\Http\RateLimiter;
 use Psr\Http\Message\ResponseInterface;
 use Psr\Http\Message\ServerRequestInterface;
 
@@ -31,7 +32,19 @@ use Psr\Http\Message\ServerRequestInterface;
  */
 final class SigController
 {
-    public function __construct(private readonly SignatureService $service) {}
+    /**
+     * Per-tenant ceiling: an org where everyone composes at once stays well
+     * below this; a leaked key doing directory enumeration does not.
+     * Per-IP failure ceiling: throttles key guessing without affecting
+     * legitimate clients (which never produce auth failures).
+     */
+    private const TENANT_LIMIT_PER_MINUTE  = 120;
+    private const FAILURE_LIMIT_PER_MINUTE = 15;
+
+    public function __construct(
+        private readonly SignatureService $service,
+        private readonly RateLimiter $limiter,
+    ) {}
 
     public function getSignature(ServerRequestInterface $request, ResponseInterface $response): ResponseInterface
     {
@@ -60,7 +73,25 @@ final class SigController
             return $response->withStatus(400)->withHeader('Content-Type', 'text/plain');
         }
 
+        // Rate limits (before any DB/Graph work):
+        //  - per client IP for auth FAILURES → slows down key guessing. The
+        //    bucket is only incremented after an actual 401 (below); here we
+        //    just refuse IPs that are already over the limit.
+        //  - per tenant slug for everything → caps what a leaked key can
+        //    exfiltrate per minute (directory enumeration).
+        $ip = (string) ($request->getServerParams()['REMOTE_ADDR'] ?? 'unknown');
+        if (!$this->limiter->check('sigfail:' . $ip, self::FAILURE_LIMIT_PER_MINUTE, 60)) {
+            return $this->tooManyRequests($response);
+        }
+        if (!$this->limiter->hit('sig:' . $req->tenantSlug, self::TENANT_LIMIT_PER_MINUTE, 60)) {
+            return $this->tooManyRequests($response);
+        }
+
         $result = $this->service->resolve($req);
+
+        if ($result->kind === SignatureResult::KIND_ERROR && $result->status === 401) {
+            $this->limiter->hit('sigfail:' . $ip, self::FAILURE_LIMIT_PER_MINUTE, 60);
+        }
 
         // Always set X-Sig-Shared so the add-in can show consistent UI.
         $response = $response->withHeader('X-Sig-Shared', $result->sharedMailbox ? 'true' : 'false');
@@ -78,6 +109,15 @@ final class SigController
             ->withStatus(200)
             ->withHeader('Content-Type', 'text/html; charset=UTF-8')
             ->withHeader('Cache-Control', 'private, no-store');
+    }
+
+    private function tooManyRequests(ResponseInterface $response): ResponseInterface
+    {
+        $response->getBody()->write('rate limit exceeded');
+        return $response
+            ->withStatus(429)
+            ->withHeader('Retry-After', '60')
+            ->withHeader('Content-Type', 'text/plain');
     }
 
     /** @return list<string> */

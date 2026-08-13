@@ -96,7 +96,10 @@ final class AuthController
         try {
             $provider = $this->entra->build($tenant);
         } catch (Throwable $e) {
-            $this->session->set('flash_login_error', 'SSO configuration error: ' . $e->getMessage());
+            // Never reflect exception details to the (unauthenticated)
+            // visitor — log the class server-side, show a generic message.
+            error_log('[sso] provider build failed for tenant ' . $tenant->slug . ' (' . $e::class . ')');
+            $this->session->set('flash_login_error', 'SSO is misconfigured for this tenant. Contact an administrator.');
             return $response->withHeader('Location', '/portal/login')->withStatus(302);
         }
 
@@ -121,7 +124,10 @@ final class AuthController
         $error = (string) ($query['error_description'] ?? $query['error'] ?? '');
 
         if ($error !== '') {
-            $this->session->set('flash_login_error', 'Entra returned an error: ' . $error);
+            // $error comes from the query string — attacker-craftable via a
+            // forged callback link. Log it, but never display it verbatim.
+            error_log('[sso] Entra returned an error for slug ' . $slug . ': ' . mb_substr($error, 0, 200));
+            $this->session->set('flash_login_error', 'Microsoft reported a sign-in problem. Please try again.');
             return $response->withHeader('Location', '/portal/login')->withStatus(302);
         }
         if ($expectedState === '' || !hash_equals($expectedState, $state) || $expectedSlug !== $slug) {
@@ -141,10 +147,12 @@ final class AuthController
             /** @var \TheNetworg\OAuth2\Client\Provider\AzureResourceOwner $owner */
             $owner    = $provider->getResourceOwner($token);
         } catch (IdentityProviderException $e) {
-            $this->session->set('flash_login_error', 'Entra rejected the sign-in: ' . $e->getMessage());
+            error_log('[sso] token exchange rejected for tenant ' . $tenant->slug . ' (' . $e::class . ')');
+            $this->session->set('flash_login_error', 'Microsoft rejected the sign-in. Please try again or contact an administrator.');
             return $response->withHeader('Location', '/portal/login')->withStatus(302);
         } catch (Throwable $e) {
-            $this->session->set('flash_login_error', 'SSO failed: ' . $e->getMessage());
+            error_log('[sso] callback failed for tenant ' . $tenant->slug . ' (' . $e::class . ')');
+            $this->session->set('flash_login_error', 'SSO sign-in failed. Please try again or contact an administrator.');
             return $response->withHeader('Location', '/portal/login')->withStatus(302);
         }
 

@@ -44,7 +44,7 @@ final class Authenticator
     public function attempt(string $email, string $password): AuthAttemptResult
     {
         $stmt = $this->pdo->prepare(
-            'SELECT id, tenant_id, email, password_hash, role, name,
+            'SELECT id, tenant_id, email, password_hash, password_changed_at, role, name,
                     failed_login_count, last_failed_login_at, locked_until
              FROM users WHERE email = :email LIMIT 1'
         );
@@ -91,6 +91,9 @@ final class Authenticator
             'name'      => $user['name'] !== null ? (string) $user['name'] : null,
             'role'      => (string) $user['role'],
             'tenant_id' => $user['tenant_id'] !== null ? (int) $user['tenant_id'] : null,
+            // Captured so AuthMiddleware can kill this session if the password
+            // changes elsewhere (self-service reset, admin reset).
+            'pw_epoch'  => (string) ($user['password_changed_at'] ?? ''),
         ]);
         return AuthAttemptResult::success();
     }

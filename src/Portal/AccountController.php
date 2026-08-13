@@ -111,19 +111,32 @@ final class AccountController
         }
 
         $this->pdo->prepare(
-            'UPDATE users SET
-                name          = :name,
-                password_hash = COALESCE(:hash, password_hash)
-             WHERE id = :id'
+            'UPDATE users SET name = :name WHERE id = :id'
         )->execute([
             ':name' => $name !== '' ? $name : null,
-            ':hash' => $hashUpdate,
             ':id'   => (int) $user['id'],
         ]);
 
         // Refresh the session payload so the topbar shows the new name.
         $sessionUser = $this->session->currentUser() ?? [];
         $sessionUser['name'] = $name !== '' ? $name : null;
+
+        if ($hashUpdate !== null) {
+            // Bumping password_changed_at logs the user out of every OTHER
+            // session (AuthMiddleware epoch check). This session survives by
+            // adopting the fresh epoch immediately.
+            $this->pdo->prepare(
+                'UPDATE users SET password_hash = :hash, password_changed_at = NOW() WHERE id = :id'
+            )->execute([
+                ':hash' => $hashUpdate,
+                ':id'   => (int) $user['id'],
+            ]);
+
+            $epoch = $this->pdo->prepare('SELECT password_changed_at FROM users WHERE id = :id');
+            $epoch->execute([':id' => (int) $user['id']]);
+            $sessionUser['pw_epoch'] = (string) ($epoch->fetchColumn() ?: '');
+        }
+
         $this->session->set('user', $sessionUser);
 
         $this->session->flash('success', 'Account updated.');

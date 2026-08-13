@@ -99,6 +99,9 @@ final class SsoAuthenticator
             'name'      => $user['name'] !== null ? (string) $user['name'] : ($name ?: null),
             'role'      => (string) $user['role'],
             'tenant_id' => $user['tenant_id'] !== null ? (int) $user['tenant_id'] : null,
+            // Captured so AuthMiddleware can kill this session if the password
+            // changes elsewhere (self-service reset, admin reset).
+            'pw_epoch'  => (string) ($user['password_changed_at'] ?? ''),
         ]);
 
         return SsoLoginResult::success();

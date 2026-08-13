@@ -40,4 +40,13 @@ return [
         'name'     => 'sigportal_sid',
         'lifetime' => 120, // minutes
     ],
+
+    // Transactional mail (password reset links). Sent via PHP mail() — works
+    // on shared hosting without SMTP credentials. 'from' defaults to
+    // no-reply@<host of base_url> when omitted; some hosts require the domain
+    // to match one of your hosted domains for delivery.
+    'mail' => [
+        'from'      => null,               // e.g. 'no-reply@signatures.example.com'
+        'from_name' => 'SignaturePortal',
+    ],
 ];

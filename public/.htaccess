@@ -18,7 +18,7 @@ Options -Indexes
     RewriteRule . /index.php [L]
 </IfModule>
 
-# Hardening headers (per-tenant CSP for the portal is set in PHP).
+# Hardening headers (the portal CSP is set by SecurityHeadersMiddleware in PHP).
 <IfModule mod_headers.c>
     Header set X-Content-Type-Options "nosniff"
     Header set X-Frame-Options "SAMEORIGIN"

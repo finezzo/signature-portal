@@ -8,6 +8,7 @@ use App\Portal\AssetController;
 use App\Portal\AuditController;
 use App\Portal\AuthController;
 use App\Portal\DashboardController;
+use App\Portal\PasswordResetController;
 use App\Portal\RuleController;
 use App\Portal\SimulatorController;
 use App\Portal\TemplateController;
@@ -31,6 +32,13 @@ return static function (App $app): void {
 
     $app->get('/portal/login',  [AuthController::class, 'showLogin']);
     $app->post('/portal/login', [AuthController::class, 'doLogin']);
+
+    // Self-service password reset. Public — the user is locked out by
+    // definition. CSRF still applies (global middleware).
+    $app->get('/portal/password/forgot',  [PasswordResetController::class, 'showForgot']);
+    $app->post('/portal/password/forgot', [PasswordResetController::class, 'doForgot']);
+    $app->get('/portal/password/reset',   [PasswordResetController::class, 'showReset']);
+    $app->post('/portal/password/reset',  [PasswordResetController::class, 'doReset']);
 
     // Entra SSO. Public — these establish the session before AuthMiddleware
     // would normally apply.

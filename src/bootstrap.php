@@ -17,10 +17,14 @@ use App\Crypto\Encryption;
 use App\Db\Database;
 use App\Graph\GraphClient;
 use App\Graph\TokenCache;
+use App\Auth\PasswordResetService;
 use App\Http\Middleware\AuthMiddleware;
 use App\Http\Middleware\CsrfMiddleware;
+use App\Http\Middleware\SecurityHeadersMiddleware;
 use App\Http\Middleware\SessionStartMiddleware;
 use App\Http\Middleware\TwigGlobalsMiddleware;
+use App\Http\RateLimiter;
+use App\Mail\Mailer;
 use App\Tenant\AssetRepository;
 use App\Tenant\DisplayEmailDeriver;
 use App\Tenant\RecipientClassifier;
@@ -83,7 +87,32 @@ return (static function (): \Slim\App {
 
     $container->set(SessionStartMiddleware::class, fn(Container $c) => new SessionStartMiddleware($c->get(SessionManager::class)));
     $container->set(CsrfMiddleware::class,         fn(Container $c) => new CsrfMiddleware($c->get(Csrf::class)));
-    $container->set(AuthMiddleware::class,         fn(Container $c) => new AuthMiddleware($c->get(SessionManager::class)));
+    $container->set(AuthMiddleware::class,         fn(Container $c) => new AuthMiddleware(
+        $c->get(SessionManager::class),
+        $c->get(\PDO::class),
+    ));
+    $container->set(SecurityHeadersMiddleware::class, fn() => new SecurityHeadersMiddleware());
+
+    // Password reset (public flow) + transactional mail
+    $container->set(Mailer::class, function (Container $c) {
+        $cfg     = $c->get(Config::class);
+        $baseUrl = (string) $cfg->get('base_url', '');
+        // `?:` (not the get() default) so an explicit null/'' in the config
+        // still falls back to the derived address.
+        return new Mailer(
+            ((string) $cfg->get('mail.from', '')) ?: Mailer::defaultFrom($baseUrl),
+            ((string) $cfg->get('mail.from_name', '')) ?: 'SignaturePortal',
+        );
+    });
+    $container->set(PasswordResetService::class, fn(Container $c) => new PasswordResetService(
+        $c->get(\PDO::class),
+        $c->get(PasswordHasher::class),
+        $c->get(Mailer::class),
+        (string) $c->get(Config::class)->get('base_url', ''),
+    ));
+
+    // DB-backed rate limiting for the public add-in API
+    $container->set(RateLimiter::class, fn(Container $c) => new RateLimiter($c->get(\PDO::class)));
 
     $container->set(Twig::class, function () use ($rootDir) {
         $cacheDir = $rootDir . '/var/cache/twig';
@@ -150,6 +179,7 @@ return (static function (): \Slim\App {
     $app->add(TwigMiddleware::createFromContainer($app, Twig::class));
     $app->add(TwigGlobalsMiddleware::class);
     $app->add(CsrfMiddleware::class);
+    $app->add(SecurityHeadersMiddleware::class);
     $app->add(SessionStartMiddleware::class);
     $app->addRoutingMiddleware();
     // displayErrorDetails ON only when config.debug is set — never in
