@@ -68,7 +68,7 @@ It is designed to run on **inexpensive shared PHP hosting** — IONOS, Strato, a
 - **Conditional template syntax** — `{if:mobile_phone}…{/if}` blocks disappear automatically when a Graph attribute is empty.
 - **Per-user overrides** — bypass the rule engine for specific addresses ("the boss wants their own signature").
 - **Multi-tenant** — manage multiple organisations from one installation, each with its own Entra app, image library, templates, and rules.
-- **Two portal auth modes** — local accounts (bcrypt + lockout after 5 failed attempts) and Microsoft Entra ID SSO with optional auto-provisioning.
+- **Two portal auth modes** — local accounts (bcrypt + lockout after 5 failed attempts, self-service password reset via email) and Microsoft Entra ID SSO with optional auto-provisioning.
 - **Per-tenant API key** — rotatable from the portal, banner reminds admins to redistribute the manifest.
 - **Shared mailbox support** — detects shared mailboxes via the `assignedLicenses` heuristic, falls back to the original sender's profile, and either keeps the shared address or derives a personal-style address per tenant preference.
 - **Audit log** — every template / rule / override / key-rotation / user change is recorded with actor + IP.
@@ -101,11 +101,13 @@ The same PHP app serves both the management portal and the signature delivery AP
 |---|---|---|
 | Outlook on the web (OWA) | ✅ | ✅ |
 | New Outlook for Windows | ✅ | ✅ |
-| Classic Outlook for Windows (recent builds) | ✅ | ✅ |
-| Outlook for Mac | ✅ | ✅ |
-| **Outlook iOS / Android** | ❌ | ❌ |
+| Classic Outlook for Windows (Version 2304+) | ✅ | ✅ |
+| Outlook for Mac (16.77+) | ✅ | ✅ |
+| Outlook iOS / Android | ✅ | ❌ |
 
-Mobile clients **do not** support event-based add-ins. If you need signature rewriting on mobile, the typical solutions are an Exchange Online transport rule (limited templating) or a server-side SMTP relay that intercepts outbound mail and calls this portal's `/api/sig` endpoint. Neither ships in this repo today; the API is a clean fit for either if you want to build it.
+The signature is applied when composing starts and re-fetched automatically when the **FROM address** changes (e.g. switching to a shared mailbox — including popped-out compose windows) or the **recipients** change (so recipient-scoped rules can swap the template).
+
+On **mobile** (Outlook for iOS/Android), event-based signatures require an Exchange Online account and a reasonably current app version (new-message compose since 4.2352.0, FROM switching since 4.2502.0). Outlook mobile itself doesn't support shared-mailbox FROM switching, so on phones the signature applies to the user's own account. Clients older than the versions above fall back to the manual ribbon button (desktop) or no signature (mobile).
 
 ## Requirements
 
@@ -126,7 +128,8 @@ The five-second version:
 # 1. Get the code on the host
 git clone https://github.com/finezzo/signature-portal.git
 # 2. Point your subdomain at <project>/public/
-# 3. Visit https://your-domain/install.php in a browser, fill the form
+# 3. Visit https://your-domain/install.php, paste the install token from
+#    config/.install_token (proves server access), fill the form
 # 4. DELETE public/install.php right after the success page
 # 5. Log in, create a tenant, upload images, write templates, define rules
 # 6. Download the OfficeApp manifest from the tenant page, sideload into Outlook
@@ -145,16 +148,20 @@ All runtime config lives in `config/config.php`. The installer creates it; you c
 | `auth.local.enabled` | Allow local password login |
 | `auth.entra.enabled` | (Reserved — Entra SSO is configured per-tenant in the portal UI) |
 | `session.name` / `session.lifetime` | Portal session cookie name and lifetime in minutes |
+| `mail.from` / `mail.from_name` | Sender for transactional mail (password reset links), sent via PHP `mail()` — no SMTP credentials needed. Defaults to `no-reply@<host of base_url>`. |
 
 ## Security notes
 
-- **`/api/sig` is key-protected** — anyone with the API key can fetch signatures for that tenant. Treat it like a secret. Rotation is one click in the portal; the old key stops working immediately and the portal banners you to redistribute the manifest.
-- **Microsoft Graph credentials are encrypted at rest** with `APP_KEY` (libsodium `crypto_secretbox`). If you lose `APP_KEY`, you must re-enter Entra credentials for every tenant.
-- **HTTPS is required.** Outlook will refuse to load the add-in over HTTP, and session cookies are marked `Secure` only when `base_url` starts with `https://`.
+- **`/api/sig` is key-protected and rate-limited** — anyone with the API key can fetch signatures for that tenant, so treat it like a secret. Rotation is one click in the portal; the old key stops working immediately and the portal banners you to redistribute the manifest. DB-backed rate limits (per tenant, plus per-IP on auth failures) cap what a leaked key can enumerate and slow down key guessing.
+- **Secrets are encrypted at rest** with `APP_KEY` (libsodium `crypto_secretbox`): per-tenant Entra client secrets, API keys, and cached Microsoft Graph access tokens. If you lose `APP_KEY`, you must re-enter Entra credentials for every tenant.
+- **Graph token values are HTML-escaped at render time** — a hostile value in a self-service Entra attribute (display name, `aboutMe`, …) can't inject markup into delivered signatures.
+- **HTTPS is required.** Outlook will refuse to load the add-in over HTTP. Session cookies are marked `Secure` when `base_url` is `https://` **or** the request itself arrives over TLS.
 - **HTML templates are sanitised on save** with HTML Purifier — stored XSS in the portal is mitigated even if a tenant editor pastes hostile HTML.
-- **CSRF tokens** on every state-changing form. The `/api/*` namespace is exempt because it is API-key-authenticated, not session-authenticated.
-- **Failed-login lockout** — 5 wrong attempts in 10 minutes locks the local account for 15 minutes. SSO sign-ins are unaffected.
-- **Hardening headers** set in `public/.htaccess`: `X-Content-Type-Options: nosniff`, `X-Frame-Options: SAMEORIGIN`, `Referrer-Policy: strict-origin-when-cross-origin`. (No CSP — Outlook's signature renderer is far too tolerant for a meaningful CSP to make sense, and the portal UI itself ships no inline scripts beyond the editor.)
+- **CSRF tokens** on every state-changing form, rotated on login; `session.use_strict_mode` blocks fixated session IDs. The `/api/*` namespace is exempt because it is API-key-authenticated, not session-authenticated.
+- **Failed-login lockout** — 5 wrong attempts in 10 minutes locks the local account for 15 minutes, with constant-time handling that doesn't leak which emails have an account. SSO sign-ins are unaffected.
+- **Password changes end other sessions** — any password change (self-service, admin reset, or reset link) immediately invalidates every other session of that user. Reset links are single-use, stored only as SHA-256 hashes, and expire after 30 minutes.
+- **Installer is token-gated** — `public/install.php` requires a one-time token written to `config/.install_token` (outside the web root), so a freshly deployed instance can't be claimed by a stranger. Delete the installer after use anyway.
+- **Hardening headers** — `X-Content-Type-Options: nosniff`, `X-Frame-Options: SAMEORIGIN`, `Referrer-Policy: strict-origin-when-cross-origin` in `public/.htaccess`; a Content-Security-Policy for the portal UI is set in PHP (`SecurityHeadersMiddleware`). `config/`, `var/`, and `migrations/` carry deny-all `.htaccess` files as a safety net against docroot misconfiguration.
 - **Append-only audit log** — every mutation (template, rule, override, user, API key) is recorded with actor email and IP, viewable per tenant under *Activity*.
 
 ## Roadmap
@@ -163,6 +170,7 @@ All runtime config lives in `config/config.php`. The installer creates it; you c
 - Template version history with rollback
 - Localisation of the portal UI
 - 2FA for local portal accounts
+- SMTP transport option for transactional mail (currently PHP `mail()`)
 
 Issues and PRs welcome.
 
