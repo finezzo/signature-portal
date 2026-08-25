@@ -385,10 +385,27 @@ The manifest embeds the tenant slug, API key, manifest GUID, and base URL. Distr
 The manifest structure follows Microsoft's recommended event-based add-in shape:
 
 - **OfficeApp top-level**: AppDomains for `login.microsoftonline.com` and `graph.microsoft.com`; FormSettings pointing at the taskpane; Mailbox MinVersion 1.1.
-- **VersionOverrides V1_0** (Mailbox 1.3+): a manual "Refresh" ribbon button that opens the taskpane.
-- **VersionOverrides V1_1** (Mailbox 1.10+): the `<Runtimes>` block (WebView + JS override — needed for classic Outlook for Windows), `SupportsSharedFolders: true`, and a single `OnNewMessageCompose` LaunchEvent.
+- **VersionOverrides V1_0** (Mailbox 1.3+): a manual "Choose signature" ribbon button that opens the taskpane (fallback for pre-2023 clients).
+- **VersionOverrides V1_1** (Mailbox 1.13+): the `<Runtimes>` block (WebView + JS override — needed for classic Outlook for Windows), `SupportsSharedFolders: true`, LaunchEvents (`OnNewMessageCompose`, `OnMessageFromChanged`, `OnMessageRecipientsChanged`), **and** a `MessageComposeCommandSurface` with the two manual ribbon buttons below. V1_1 fully replaces V1_0 on clients that support it, which is why the command surface is declared in both blocks.
 
 Permissions: `ReadWriteMailbox` (needed for `setSignatureAsync`).
+
+### Manual insertion (ribbon buttons, manifest v1.3+)
+
+Besides the automatic insertion, the compose ribbon offers two buttons in a "Signature" group:
+
+- **Insert signature** — re-runs the automatic pipeline on demand and inserts the result. Unlike the silent automatic flow, every outcome (progress, success, no matching rule, service unreachable) is shown in Outlook's notification bar.
+- **Choose signature** — opens a taskpane listing all templates the admin flagged as **"Available for manual selection in the Outlook add-in"** (checkbox in the template editor). Clicking a template renders it server-side with the user's real profile data (`GET /api/sig?...&template_id=N`) and shows a preview; **Insert** puts it into the message. The template list comes from `GET /api/sig/templates` (same `X-Sig-Key` auth and rate-limit buckets as `/api/sig`).
+
+Notes:
+
+- The flag defaults to **off** — the chooser is empty until an admin opts templates in.
+- Manually selectable templates bypass rules/overrides but keep the full pipeline (Graph profile, shared-mailbox fallback, disclaimer). Non-flagged or foreign-tenant `template_id`s return 404.
+- **Outlook mobile (iOS/Android) cannot show ribbon buttons** (`MobileFormFactor` supports LaunchEvents only) — manual insertion is desktop/web only; automatic insertion still works on mobile.
+- **Localization**: ribbon labels, the taskpane, and all notification messages follow Outlook's display language — German (`de-*`) gets German strings, everything else English. Manifest strings use `<Override Locale="de-DE">`; runtime strings switch on `Office.context.displayLanguage`.
+- **Icons**: the add-in ships a pen glyph in all Microsoft-required sizes (16/32/80 px for the ribbon plus 20/24/40/48/64 for high DPI, 64 for `IconUrl`, 128 for `HighResolutionIconUrl`) under `public/addin/icon-*.png`. Regenerate with `python3 tools/generate-addin-icons.py public/addin` if you change the design; icon URLs carry the manifest `v=` cache-buster so clients pick up replacements.
+
+**Upgrading from a pre-1.3 manifest**: the buttons only appear after the manifest is re-downloaded from the portal and re-uploaded in the M365 admin centre (the runtime files then refresh themselves via the `v=` cache-buster). Until then, the taskpane URL lacks the tenant/key parameters and shows an "installation is outdated" notice instead of the chooser.
 
 ### Simulator
 

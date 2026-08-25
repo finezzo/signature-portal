@@ -10,6 +10,7 @@ final class Template
         public readonly int $tenantId,
         public readonly string $name,
         public readonly string $html,
+        public readonly bool $isManuallySelectable,
         public readonly string $createdAt,
         public readonly string $updatedAt,
     ) {}
@@ -22,6 +23,7 @@ final class Template
             (int) $row['tenant_id'],
             (string) $row['name'],
             (string) $row['html'],
+            (bool) ($row['is_manually_selectable'] ?? false),
             (string) $row['created_at'],
             (string) $row['updated_at'],
         );

@@ -23,6 +23,7 @@ use Slim\Routing\RouteCollectorProxy;
 return static function (App $app): void {
     // Add-in API — public, key-authenticated, no session/CSRF.
     $app->get('/api/sig', [SigController::class, 'getSignature']);
+    $app->get('/api/sig/templates', [SigController::class, 'listTemplates']);
 
     $app->get('/', fn(ServerRequestInterface $r, ResponseInterface $s) =>
         $s->withHeader('Location', '/portal/dashboard')->withStatus(302));

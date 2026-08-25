@@ -33,23 +33,41 @@ final class TemplateRepository
         return $row === false ? null : Template::fromRow($row);
     }
 
-    public function create(int $tenantId, string $name, string $sanitizedHtml): int
+    /**
+     * Templates an admin has opted into the add-in's "Choose signature" pane.
+     *
+     * @return list<Template>
+     */
+    public function listManuallySelectable(int $tenantId): array
     {
         $stmt = $this->pdo->prepare(
-            'INSERT INTO templates (tenant_id, name, html) VALUES (:tid, :name, :html)'
+            'SELECT * FROM templates
+             WHERE tenant_id = :tid AND is_manually_selectable = 1
+             ORDER BY name'
+        );
+        $stmt->execute([':tid' => $tenantId]);
+        return array_map(static fn(array $r) => Template::fromRow($r), $stmt->fetchAll());
+    }
+
+    public function create(int $tenantId, string $name, string $sanitizedHtml, bool $manuallySelectable = false): int
+    {
+        $stmt = $this->pdo->prepare(
+            'INSERT INTO templates (tenant_id, name, html, is_manually_selectable)
+             VALUES (:tid, :name, :html, :sel)'
         );
         $stmt->execute([
             ':tid'  => $tenantId,
             ':name' => $name,
             ':html' => $sanitizedHtml,
+            ':sel'  => $manuallySelectable ? 1 : 0,
         ]);
         return (int) $this->pdo->lastInsertId();
     }
 
-    public function update(int $id, int $tenantId, string $name, string $sanitizedHtml): void
+    public function update(int $id, int $tenantId, string $name, string $sanitizedHtml, bool $manuallySelectable = false): void
     {
         $stmt = $this->pdo->prepare(
-            'UPDATE templates SET name = :name, html = :html
+            'UPDATE templates SET name = :name, html = :html, is_manually_selectable = :sel
              WHERE id = :id AND tenant_id = :tid'
         );
         $stmt->execute([
@@ -57,6 +75,7 @@ final class TemplateRepository
             ':tid'  => $tenantId,
             ':name' => $name,
             ':html' => $sanitizedHtml,
+            ':sel'  => $manuallySelectable ? 1 : 0,
         ]);
     }
 

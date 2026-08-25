@@ -122,9 +122,18 @@ final class SignatureService
         // primary user's address — the actual person sending — so overrides
         // follow the user even when they send from a shared mailbox.
         $overrideEmail = $req->primaryEmail !== '' ? $req->primaryEmail : $req->fromEmail;
-        $override      = $this->overrides->findByEmail($tenant->id, $overrideEmail);
+        $override      = $req->templateId === null
+            ? $this->overrides->findByEmail($tenant->id, $overrideEmail)
+            : null;
 
-        if ($override !== null) {
+        if ($req->templateId !== null) {
+            // Manual pick from the taskpane. Only admin-flagged templates are
+            // reachable; 404 (not 403) so key holders can't probe which ids exist.
+            $template = $this->templates->find($req->templateId, $tenant->id);
+            if ($template === null || !$template->isManuallySelectable) {
+                return SignatureResult::error(404, 'template not available for manual selection');
+            }
+        } elseif ($override !== null) {
             $template = $this->templates->find($override->templateId, $tenant->id);
             if ($template === null) {
                 return SignatureResult::error(500, 'override references missing template');
@@ -152,5 +161,27 @@ final class SignatureService
         }
 
         return SignatureResult::ok($rendered, $isSharedFrom);
+    }
+
+    /**
+     * Templates the add-in's "Choose signature" pane may offer. Names only —
+     * rendering (and the Graph round-trip it needs) happens per selection via
+     * resolve() with templateId set.
+     *
+     * Returns null on auth failure so the controller can emit the same 401 as
+     * /api/sig and feed the per-IP failure bucket.
+     *
+     * @return list<array{id:int,name:string}>|null
+     */
+    public function listSelectableTemplates(string $tenantSlug, string $apiKey): ?array
+    {
+        $tenant = $this->tenants->findBySlug($tenantSlug);
+        if ($tenant === null || !$this->tenantService->verifyApiKey($tenant, $apiKey)) {
+            return null;
+        }
+        return array_map(
+            static fn($t) => ['id' => $t->id, 'name' => $t->name],
+            $this->templates->listManuallySelectable($tenant->id),
+        );
     }
 }

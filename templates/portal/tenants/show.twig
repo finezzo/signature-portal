@@ -46,6 +46,11 @@
                 <p>Download the OfficeApp manifest XML for this tenant. Upload it via the M365 admin centre or sideload it into Outlook.</p>
                 <a class="btn btn-primary" href="/portal/tenants/{{ tenant.id }}/manifest.xml">Download manifest.xml</a>
                 <p class="muted" style="font-size:13px;margin-top:12px;">The manifest embeds the tenant slug and API key. Treat it as a secret.</p>
+                <p class="muted" style="font-size:13px;">
+                    Manifest v1.3 adds the manual <em>Insert signature</em> and <em>Choose signature</em>
+                    ribbon buttons. If your users don't see them, re-download the manifest here and
+                    re-upload it in the M365 admin centre.
+                </p>
             {% else %}
                 <p class="muted">Generate an API key first.</p>
             {% endif %}

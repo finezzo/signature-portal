@@ -7,6 +7,8 @@
  *     address changes (shared-mailbox switch), incl. popped-out windows
  *   - OnMessageRecipientsChanged (Mailbox 1.11+) — re-fetch when To/Cc/Bcc
  *     change, because rules can be scoped by recipient
+ *   - insertSignatureManual      — ribbon button (ExecuteFunction): re-runs
+ *     the same pipeline on demand, with visible notification-bar feedback
  *
  * Tenant slug and API key are read from the URL query string of this
  * file (the manifest embeds both in <bt:Url id="commands.url" .../>).
@@ -39,6 +41,38 @@
     var TENANT = QUERY.tenant || "";
     var API_KEY = QUERY.key || "";
 
+    // UI strings for the manual insert button, keyed by language. The
+    // automatic handlers stay silent by design; only the manual path talks
+    // to the user. Language follows Outlook's display language
+    // (Office.context.displayLanguage, available once Office is ready).
+    var STRINGS = {
+        en: {
+            fetching:      "Fetching your signature…",
+            inserted:      "Signature inserted.",
+            noMatch:       "No signature rule matches this message.",
+            insertFailed:  "Could not insert the signature into the message.",
+            unreachable:   "Signature service unreachable. Try again shortly.",
+            misconfigured: "Signature add-in is misconfigured — please re-install it."
+        },
+        de: {
+            fetching:      "Signatur wird abgerufen…",
+            inserted:      "Signatur eingefügt.",
+            noMatch:       "Keine Signaturregel passt zu dieser Nachricht.",
+            insertFailed:  "Die Signatur konnte nicht eingefügt werden.",
+            unreachable:   "Signaturdienst nicht erreichbar. Bitte später erneut versuchen.",
+            misconfigured: "Signatur-Add-in ist falsch konfiguriert — bitte neu installieren."
+        }
+    };
+
+    function t(key) {
+        var lang = "en";
+        try {
+            var dl = (Office.context && Office.context.displayLanguage) || "";
+            if (/^de/i.test(dl)) lang = "de";
+        } catch (_e) { /* keep English */ }
+        return (STRINGS[lang] && STRINGS[lang][key]) || STRINGS.en[key] || key;
+    }
+
     function onNewMessageComposeHandler(event) { runWithSignature(event, false); }
     function onMessageFromChangedHandler(event) { runWithSignature(event, false); }
     function onMessageRecipientsChangedHandler(event) { runWithSignature(event, true); }
@@ -50,6 +84,7 @@
         Office.actions.associate("onNewMessageComposeHandler", onNewMessageComposeHandler);
         Office.actions.associate("onMessageFromChangedHandler", onMessageFromChangedHandler);
         Office.actions.associate("onMessageRecipientsChangedHandler", onMessageRecipientsChangedHandler);
+        Office.actions.associate("insertSignatureManual", insertSignatureManual);
     }
 
     // Register handlers BOTH immediately and in Office.onReady():
@@ -105,6 +140,64 @@
                 });
             });
         } catch (_e) {
+            event.completed();
+        }
+    }
+
+    // ---- Manual "Insert signature" ribbon button (ExecuteFunction) --------
+    //
+    // Same fetch pipeline as the automatic handlers, but:
+    //   - never skipped by the lastContextKey dedupe (the user explicitly
+    //     asked, so we always re-fetch), and
+    //   - every outcome is surfaced in the notification bar instead of
+    //     failing silently. Outlook caps notification messages at 150 chars
+    //     and requires an icon resid for informationalMessage.
+    var NOTIF_KEY = "sigPortalStatus";
+
+    function notify(type, message) {
+        try {
+            var msg = { type: type, message: String(message).slice(0, 150) };
+            if (type === "informationalMessage") {
+                msg.icon = "icon16";
+                msg.persistent = false;
+            }
+            Office.context.mailbox.item.notificationMessages.replaceAsync(NOTIF_KEY, msg, function () {});
+        } catch (_e) { /* notifications unavailable — insertion still works */ }
+    }
+
+    function insertSignatureManual(event) {
+        if (!TENANT || !API_KEY) {
+            notify("errorMessage", t("misconfigured"));
+            return event.completed();
+        }
+        try {
+            notify("progressIndicator", t("fetching"));
+            collectContext(function (ctx) {
+                lastContextKey = ctx.fromEmail + "|" + ctx.recipients.join(",");
+                fetchSignature(ctx, function (html) {
+                    if (!html) {
+                        notify("informationalMessage", t("noMatch"));
+                        return event.completed();
+                    }
+                    Office.context.mailbox.item.body.setSignatureAsync(
+                        html,
+                        { coercionType: Office.CoercionType.Html },
+                        function (res) {
+                            if (res && res.status === Office.AsyncResultStatus.Succeeded) {
+                                notify("informationalMessage", t("inserted"));
+                            } else {
+                                notify("errorMessage", t("insertFailed"));
+                            }
+                            event.completed();
+                        }
+                    );
+                }, function (_err) {
+                    notify("errorMessage", t("unreachable"));
+                    event.completed();
+                });
+            });
+        } catch (_e) {
+            notify("errorMessage", t("unreachable"));
             event.completed();
         }
     }

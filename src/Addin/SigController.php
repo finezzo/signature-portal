@@ -19,6 +19,13 @@ use Psr\Http\Message\ServerRequestInterface;
  *     &recipients=<csv>        (optional — to/cc/bcc, comma-separated)
  *     &language=<bcp47>        (optional — overrides Graph preferredLanguage)
  *     &mailbox_type=shared|personal  (optional override; otherwise auto)
+ *     &template_id=<id>        (optional — manual pick from the taskpane;
+ *                               must be flagged is_manually_selectable, else 404)
+ *
+ *   GET /api/sig/templates
+ *     ?tenant=<slug>
+ *   → 200 application/json {"templates":[{"id":1,"name":"…"},…]} — the
+ *     templates an admin has opted into the "Choose signature" pane.
  *
  *   Auth: X-Sig-Key: <key>  (header only — no query-string fallback)
  *
@@ -64,6 +71,7 @@ final class SigController
             recipients:   $this->parseRecipients((string) ($q['recipients'] ?? '')),
             language:     $this->nullIfEmpty((string) ($q['language'] ?? '')),
             mailboxType:  $this->validateMailboxType((string) ($q['mailbox_type'] ?? '')),
+            templateId:   ($tid = (int) ($q['template_id'] ?? 0)) > 0 ? $tid : null,
         );
 
         // Minimal validation — return 400 for malformed input rather than
@@ -108,6 +116,41 @@ final class SigController
         return $response
             ->withStatus(200)
             ->withHeader('Content-Type', 'text/html; charset=UTF-8')
+            ->withHeader('Cache-Control', 'private, no-store');
+    }
+
+    public function listTemplates(ServerRequestInterface $request, ResponseInterface $response): ResponseInterface
+    {
+        $q      = $request->getQueryParams();
+        $tenant = trim((string) ($q['tenant'] ?? ''));
+        $key    = $request->getHeaderLine('X-Sig-Key');
+
+        if ($tenant === '' || $key === '') {
+            $response->getBody()->write('missing or malformed parameter (tenant, key)');
+            return $response->withStatus(400)->withHeader('Content-Type', 'text/plain');
+        }
+
+        // Same rate-limit dance as getSignature(): shared buckets, so the
+        // taskpane's list request counts against the tenant ceiling too.
+        $ip = (string) ($request->getServerParams()['REMOTE_ADDR'] ?? 'unknown');
+        if (!$this->limiter->check('sigfail:' . $ip, self::FAILURE_LIMIT_PER_MINUTE, 60)) {
+            return $this->tooManyRequests($response);
+        }
+        if (!$this->limiter->hit('sig:' . $tenant, self::TENANT_LIMIT_PER_MINUTE, 60)) {
+            return $this->tooManyRequests($response);
+        }
+
+        $templates = $this->service->listSelectableTemplates($tenant, $key);
+        if ($templates === null) {
+            $this->limiter->hit('sigfail:' . $ip, self::FAILURE_LIMIT_PER_MINUTE, 60);
+            $response->getBody()->write('unknown tenant or invalid api key');
+            return $response->withStatus(401)->withHeader('Content-Type', 'text/plain');
+        }
+
+        $response->getBody()->write((string) json_encode(['templates' => $templates]));
+        return $response
+            ->withStatus(200)
+            ->withHeader('Content-Type', 'application/json')
             ->withHeader('Cache-Control', 'private, no-store');
     }
 

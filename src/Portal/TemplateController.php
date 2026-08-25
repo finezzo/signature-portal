@@ -64,7 +64,7 @@ final class TemplateController
         return $this->view->render($response, 'portal/templates/form.twig', [
             'tenant'           => $tenant,
             'template'         => null,
-            'form'             => ['name' => $defaultName, 'html' => $defaultHtml],
+            'form'             => ['name' => $defaultName, 'html' => $defaultHtml, 'is_manually_selectable' => false],
             'errors'           => [],
             'starters'         => StarterTemplates::all(),
             'selected_starter' => $picked['id'] ?? null,
@@ -84,6 +84,7 @@ final class TemplateController
         $form = [
             'name' => trim((string) ($body['name'] ?? '')),
             'html' => (string) ($body['html'] ?? ''),
+            'is_manually_selectable' => !empty($body['is_manually_selectable']),
         ];
         $errors = $this->validate($form);
         if ($errors !== []) {
@@ -98,7 +99,7 @@ final class TemplateController
         }
 
         $sanitized = $this->renderer->sanitize($form['html']);
-        $id = $this->templates->create($tenant->id, $form['name'], $sanitized);
+        $id = $this->templates->create($tenant->id, $form['name'], $sanitized, $form['is_manually_selectable']);
 
         $this->audit->record($tenant->id, 'template.created', 'template', $id, "Template '{$form['name']}' created");
         $this->session->flash('success', 'Template created.');
@@ -115,7 +116,7 @@ final class TemplateController
         return $this->view->render($response, 'portal/templates/form.twig', [
             'tenant'   => $tenant,
             'template' => $template,
-            'form'     => ['name' => $template->name, 'html' => $template->html],
+            'form'     => ['name' => $template->name, 'html' => $template->html, 'is_manually_selectable' => $template->isManuallySelectable],
             'errors'   => [],
             'token_groups'  => TokenCatalog::all(),
             'tenant_assets' => $this->tenantAssets($tenant),
@@ -135,6 +136,7 @@ final class TemplateController
         $form = [
             'name' => trim((string) ($body['name'] ?? '')),
             'html' => (string) ($body['html'] ?? ''),
+            'is_manually_selectable' => !empty($body['is_manually_selectable']),
         ];
         $errors = $this->validate($form);
         if ($errors !== []) {
@@ -148,7 +150,7 @@ final class TemplateController
         }
 
         $sanitized = $this->renderer->sanitize($form['html']);
-        $this->templates->update($template->id, $tenant->id, $form['name'], $sanitized);
+        $this->templates->update($template->id, $tenant->id, $form['name'], $sanitized, $form['is_manually_selectable']);
 
         $this->audit->record($tenant->id, 'template.updated', 'template', $template->id, "Template '{$form['name']}' saved");
         $this->session->flash('success', 'Template saved.');
@@ -173,7 +175,7 @@ final class TemplateController
         if ($template === null) return $this->notFound($response);
 
         $newName = $this->uniqueDuplicateName($tenant->id, $template->name);
-        $newId   = $this->templates->create($tenant->id, $newName, $template->html);
+        $newId   = $this->templates->create($tenant->id, $newName, $template->html, $template->isManuallySelectable);
 
         $this->audit->record($tenant->id, 'template.duplicated', 'template', $newId, "Template '{$template->name}' cloned to '{$newName}'", ['source_id' => $template->id]);
         $this->session->flash('success', "Template duplicated as \"{$newName}\".");

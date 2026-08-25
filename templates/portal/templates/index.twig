@@ -17,7 +17,13 @@
     <tbody>
     {% for t in templates %}
         <tr>
-            <td><a href="/portal/tenants/{{ tenant.id }}/templates/{{ t.id }}/edit">{{ t.name }}</a></td>
+            <td>
+                <a href="/portal/tenants/{{ tenant.id }}/templates/{{ t.id }}/edit">{{ t.name }}</a>
+                {% if t.isManuallySelectable %}
+                    <span class="muted" style="font-size:11px;border:1px solid var(--border);border-radius:10px;padding:1px 8px;margin-left:6px;"
+                          title="Users can insert this template manually via the Outlook add-in">manual</span>
+                {% endif %}
+            </td>
             <td>{{ t.updatedAt }}</td>
             <td class="actions">
                 <form method="post" action="/portal/tenants/{{ tenant.id }}/templates/{{ t.id }}/duplicate" class="inline">

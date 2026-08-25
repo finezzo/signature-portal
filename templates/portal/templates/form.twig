@@ -61,6 +61,17 @@
         Saved HTML is sanitized by HTML Purifier.
     </div>
 
+    <label style="margin-top:16px;display:flex;align-items:center;gap:8px;cursor:pointer;">
+        <input type="checkbox" name="is_manually_selectable" value="1"
+               style="width:auto;margin:0;"
+               {{ form.is_manually_selectable|default(false) ? 'checked' : '' }}>
+        <span>Available for manual selection in the Outlook add-in</span>
+    </label>
+    <div class="muted" style="font-size:13px;margin-top:4px;">
+        Users see this template in the add-in's "Choose signature" pane and can insert
+        it on demand. Requires the v1.3 manifest to be deployed.
+    </div>
+
     <div id="draft-restore-banner" class="alert" style="display:none;margin-top:16px;background:#fff7e6;color:#92400e;border:1px solid #fcd34d;">
         <strong>Unsaved draft found</strong> <span id="draft-age" class="muted"></span> —
         <button type="button" id="draft-restore" class="link-button" style="font-weight:600;">Restore</button>
