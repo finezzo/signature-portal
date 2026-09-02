@@ -12,20 +12,33 @@
         .tp-status { font-size: 13px; color: #555; margin: 8px 0; min-height: 18px; }
         .tp-status.error { color: #b42318; }
         .tp-list { list-style: none; margin: 0 0 12px 0; padding: 0; }
-        .tp-list li { margin: 0 0 6px 0; }
-        .tp-list button {
-            display: block; width: 100%; text-align: left; cursor: pointer;
-            padding: 8px 10px; font-size: 14px; background: #fff;
-            border: 1px solid #d0d7de; border-radius: 6px;
+        .tp-card {
+            margin: 0 0 10px 0; border: 1px solid #d0d7de; border-radius: 6px;
+            background: #fff; cursor: pointer; overflow: hidden;
         }
-        .tp-list button.selected { border-color: #2f6feb; background: #eef4ff; }
-        .tp-preview {
-            width: 100%; height: 260px; border: 1px solid #d0d7de;
-            border-radius: 6px; background: #fff; display: none;
+        .tp-card:focus { outline: 2px solid #2f6feb; outline-offset: 1px; }
+        .tp-card.selected { border-color: #2f6feb; box-shadow: 0 0 0 1px #2f6feb; }
+        .tp-card-name {
+            display: block; padding: 6px 10px; font-size: 13px; font-weight: 600;
+            background: #f6f8fa; border-bottom: 1px solid #e6e9ec;
         }
+        .tp-card.selected .tp-card-name { background: #eef4ff; color: #2f6feb; }
+        .tp-card-preview { position: relative; overflow: hidden; background: #fff; }
+        .tp-card-preview.clipped::after {
+            content: ""; position: absolute; left: 0; right: 0; bottom: 0; height: 36px;
+            background: linear-gradient(to bottom, rgba(255, 255, 255, 0), #fff);
+            pointer-events: none;
+        }
+        .tp-card-preview iframe {
+            display: block; border: 0; pointer-events: none; transform-origin: 0 0;
+        }
+        .tp-card-note { padding: 8px 10px; font-size: 12px; color: #777; }
         .tp-insert {
-            display: none; margin-top: 10px; padding: 8px 16px; font-size: 14px;
-            cursor: pointer; background: #2f6feb; color: #fff; border: 0; border-radius: 6px;
+            display: none; width: 100%; margin-top: 10px; padding: 10px 16px;
+            font-size: 14px; cursor: pointer; background: #2f6feb; color: #fff;
+            border: 0; border-radius: 6px;
+            position: sticky; bottom: 12px;
+            box-shadow: 0 2px 8px rgba(0, 0, 0, .25);
         }
         .tp-insert:disabled { opacity: .5; cursor: default; }
     </style>
@@ -35,11 +48,10 @@
     <div class="tp-wrap">
         <h2 id="tp-title" style="margin:0 0 4px 0;font-size:16px;">Choose signature</h2>
         <div id="tp-status" class="tp-status">Loading…</div>
-        <ul id="tp-list" class="tp-list"></ul>
-        <iframe id="tp-preview" class="tp-preview" sandbox="allow-same-origin"></iframe>
+        <ul id="tp-list" class="tp-list" role="radiogroup" aria-labelledby="tp-title"></ul>
         <button id="tp-insert" class="tp-insert" type="button">Insert signature</button>
     </div>
 </main>
-<script src="/addin/taskpane.js"></script>
+<script src="/addin/taskpane.js?v=5"></script>
 </body>
 </html>

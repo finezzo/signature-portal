@@ -2,9 +2,12 @@
  * SignaturePortal — "Choose signature" taskpane.
  *
  * Lists the templates an admin flagged as manually selectable
- * (GET /api/sig/templates), renders one on click with the user's real
- * profile data (GET /api/sig?...&template_id=N), and inserts the cached
- * HTML via setSignatureAsync.
+ * (GET /api/sig/templates) and immediately renders each of them with the
+ * user's real profile data (GET /api/sig?...&template_id=N) as a
+ * scaled-to-fit preview card, so all signatures are visible side by side.
+ * Clicking a card selects it; Insert reuses the cached HTML via
+ * setSignatureAsync. Previews load one at a time to stay clear of the
+ * API rate limit.
  *
  * Tenant slug and API key are read from this page's query string — the
  * manifest embeds both in the Taskpane.Url resource, same as commands.html.
@@ -74,7 +77,6 @@
         title:   document.getElementById("tp-title"),
         status:  document.getElementById("tp-status"),
         list:    document.getElementById("tp-list"),
-        preview: document.getElementById("tp-preview"),
         insert:  document.getElementById("tp-insert")
     };
 
@@ -84,6 +86,7 @@
     var ctx = { fromEmail: "", primary: "" };
     var htmlCache = {};
     var selectedId = null;
+    var previews = [];
 
     function setStatus(message, isError) {
         el.status.textContent = message || "";
@@ -126,53 +129,129 @@
 
     function renderList(templates) {
         el.list.innerHTML = "";
+        previews = [];
         if (templates.length === 0) {
             setStatus(t("empty"));
             return;
         }
         setStatus("");
+        var queue = [];
         templates.forEach(function (tpl) {
             var li = document.createElement("li");
-            var btn = document.createElement("button");
-            btn.type = "button";
-            btn.textContent = tpl.name;
-            btn.addEventListener("click", function () { selectTemplate(tpl.id, btn); });
-            li.appendChild(btn);
+            li.className = "tp-card";
+            li.tabIndex = 0;
+            li.setAttribute("role", "radio");
+            li.setAttribute("aria-checked", "false");
+
+            var name = document.createElement("span");
+            name.className = "tp-card-name";
+            name.textContent = tpl.name;
+            li.appendChild(name);
+
+            var box = document.createElement("div");
+            box.className = "tp-card-preview";
+            var note = document.createElement("div");
+            note.className = "tp-card-note";
+            note.textContent = t("rendering");
+            box.appendChild(note);
+            li.appendChild(box);
+
+            function select() { selectCard(tpl.id, li); }
+            li.addEventListener("click", select);
+            li.addEventListener("keydown", function (e) {
+                if (e.key === "Enter" || e.key === " ") {
+                    e.preventDefault();
+                    select();
+                }
+            });
+
             el.list.appendChild(li);
+            queue.push({ id: tpl.id, box: box, note: note });
         });
+        loadPreview(queue, 0);
     }
 
-    function selectTemplate(id, btn) {
-        Array.prototype.forEach.call(el.list.querySelectorAll("button"), function (b) {
-            b.className = b === btn ? "selected" : "";
-        });
-        selectedId = id;
-        el.insert.disabled = true;
+    // Renders previews one after another so a burst of templates cannot
+    // trip the API rate limit.
+    function loadPreview(queue, i) {
+        if (i >= queue.length) return;
+        var item = queue[i];
+        var next = function () { loadPreview(queue, i + 1); };
 
-        if (htmlCache[id] !== undefined) {
-            return showPreview(id);
+        if (htmlCache[item.id] !== undefined) {
+            fillPreview(item);
+            return next();
         }
-        setStatus(t("rendering"));
         var path = "/api/sig"
             + "?tenant="      + encodeURIComponent(TENANT)
             + "&email="       + encodeURIComponent(ctx.fromEmail)
             + "&primary="     + encodeURIComponent(ctx.primary)
-            + "&template_id=" + encodeURIComponent(id);
+            + "&template_id=" + encodeURIComponent(item.id);
         apiGet(path, function (xhr) {
-            htmlCache[id] = xhr.responseText;
-            if (selectedId === id) showPreview(id);
+            htmlCache[item.id] = xhr.responseText;
+            fillPreview(item);
+            if (selectedId === item.id) el.insert.disabled = false;
+            next();
         }, function (status) {
-            setStatus(t(apiErrorKey(status)), true);
-            if (status === 404) loadTemplates(); // stale list — refresh
+            if (status === 404) return loadTemplates(); // stale list — refresh
+            item.note.textContent = t(apiErrorKey(status));
+            next();
         });
     }
 
-    function showPreview(id) {
-        setStatus("");
-        el.preview.style.display = "block";
-        el.preview.srcdoc = htmlCache[id];
+    // Lay the signature out at a typical desktop mail width before scaling,
+    // so the preview looks like it will in a real message instead of
+    // reflowing to the narrow taskpane.
+    var LAYOUT_WIDTH = 600;
+
+    function fillPreview(item) {
+        var iframe = document.createElement("iframe");
+        iframe.setAttribute("sandbox", "allow-same-origin");
+        iframe.srcdoc = '<!doctype html><html><head><meta charset="utf-8">'
+            + "<style>body{margin:0}</style></head><body>"
+            + '<div id="sp-measure" style="width:' + LAYOUT_WIDTH + 'px">'
+            + htmlCache[item.id]
+            + "</div></body></html>";
+        iframe.addEventListener("load", function () {
+            scalePreview(item.box, iframe);
+        });
+        item.box.innerHTML = "";
+        item.box.appendChild(iframe);
+        previews.push({ box: item.box, iframe: iframe });
+    }
+
+    // Previews always scale to the full card width; long signatures are
+    // clipped at this height (with a fade) instead of being shrunk further,
+    // so the top part stays large and the Insert button stays reachable.
+    var PREVIEW_MAX_HEIGHT = 180;
+
+    function scalePreview(box, iframe) {
+        var doc = iframe.contentDocument;
+        if (!doc || !doc.documentElement) return;
+        var m = doc.getElementById("sp-measure");
+        // scrollWidth catches fixed-width tables wider than LAYOUT_WIDTH.
+        var w = (m && Math.max(m.offsetWidth, m.scrollWidth)) || LAYOUT_WIDTH;
+        var h = (m && m.offsetHeight) || doc.documentElement.scrollHeight || 1;
+        var avail = box.clientWidth || 1;
+        var scale = Math.min(1, avail / w);
+        iframe.style.width = w + "px";
+        iframe.style.height = h + "px";
+        iframe.style.transform = "scale(" + scale + ")";
+        var full = Math.ceil(h * scale);
+        var clipped = full > PREVIEW_MAX_HEIGHT;
+        box.style.height = (clipped ? PREVIEW_MAX_HEIGHT : full) + "px";
+        box.classList.toggle("clipped", clipped);
+    }
+
+    function selectCard(id, li) {
+        Array.prototype.forEach.call(el.list.children, function (card) {
+            var sel = card === li;
+            card.classList.toggle("selected", sel);
+            card.setAttribute("aria-checked", sel ? "true" : "false");
+        });
+        selectedId = id;
         el.insert.style.display = "inline-block";
-        el.insert.disabled = false;
+        el.insert.disabled = htmlCache[id] === undefined;
     }
 
     function insertSelected() {
@@ -228,6 +307,9 @@
         }
 
         el.insert.addEventListener("click", insertSelected);
+        window.addEventListener("resize", function () {
+            previews.forEach(function (p) { scalePreview(p.box, p.iframe); });
+        });
         collectComposeContext(loadTemplates);
     });
 })();
