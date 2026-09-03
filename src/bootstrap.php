@@ -150,12 +150,7 @@ return (static function (): \Slim\App {
     ));
 
     // Phase 3 — Graph + signature pipeline
-    // force_ip_resolve v4: some login.microsoftonline.com IPv6 edge nodes
-    // answer 404 NotFound from IONOS's network; IPv4 routes are reliable.
-    $container->set(GuzzleHttp::class,         fn() => new GuzzleHttp([
-        'http_errors'      => true,
-        'force_ip_resolve' => 'v4',
-    ]));
+    $container->set(GuzzleHttp::class,         fn() => new GuzzleHttp(['http_errors' => true]));
     $container->set(TokenCache::class,         fn(Container $c) => new TokenCache(
         $c->get(\PDO::class),
         $c->get(Encryption::class),
