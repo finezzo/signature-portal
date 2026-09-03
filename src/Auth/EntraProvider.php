@@ -58,6 +58,10 @@ final class EntraProvider
             'tenant'                => $tenant->entraTenantId,
             'defaultEndPointVersion'=> Azure::ENDPOINT_VERSION_2_0,
             'scopes'                => ['openid', 'profile', 'email'],
+        ], [
+            // Same IPv4 pin as the Graph client — some Entra IPv6 edge nodes
+            // answer 404 NotFound from IONOS's network.
+            'httpClient' => new \GuzzleHttp\Client(['force_ip_resolve' => 'v4']),
         ]);
         // The Azure provider uses Graph as default resource for v1.0 tokens;
         // for v2.0 + scopes above we just need OIDC, no resource override.
