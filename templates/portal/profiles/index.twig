@@ -1,0 +1,64 @@
+{% extends "portal/layout.twig" %}
+{% block title %}Profiles — {{ tenant.name }}{% endblock %}
+
+{% block sub_nav %}{% include 'portal/_tenant_nav.twig' with {'tenant': tenant, 'active': 'profiles'} %}{% endblock %}
+
+{% block content %}
+<div class="page-header">
+    <h2>Local profiles</h2>
+    <a class="btn btn-primary" href="/portal/tenants/{{ tenant.id }}/profiles/new">Add profile</a>
+</div>
+
+<p class="muted" style="font-size:13px;">
+    The local copy of your users' directory data — the automatic fallback whenever Microsoft Graph is
+    unreachable, so signatures keep rendering during an outage. Every successful Graph lookup refreshes
+    this store by itself; entries you add by hand or import from CSV are placeholders that Graph
+    overwrites once it recovers.
+</p>
+
+{% if profiles is empty %}
+    <p class="muted">No profiles stored yet.</p>
+{% else %}
+<table class="data-table">
+    <thead><tr>
+        <th>Email</th><th>Name</th><th>Source</th><th>Last updated</th><th></th>
+    </tr></thead>
+    <tbody>
+    {% for p in profiles %}
+        <tr>
+            <td><code>{{ p.email }}</code></td>
+            <td>{{ p.displayName ?: '—' }}</td>
+            <td>
+                <span class="badge {{ p.source == 'graph' ? 'badge-int' : 'badge-ext' }}">{{ p.source }}</span>
+            </td>
+            <td class="muted">{{ p.storedAt() }}</td>
+            <td class="actions">
+                <a href="/portal/tenants/{{ tenant.id }}/profiles/{{ p.id }}/edit">Edit</a>
+                <form method="post" action="/portal/tenants/{{ tenant.id }}/profiles/{{ p.id }}/delete" class="inline"
+                      onsubmit="return confirm('Delete this stored profile?')">
+                    <input type="hidden" name="_csrf" value="{{ csrf_token }}">
+                    <button type="submit" class="link-button">Delete</button>
+                </form>
+            </td>
+        </tr>
+    {% endfor %}
+    </tbody>
+</table>
+{% endif %}
+
+<div class="card" style="margin-top:24px;">
+    <h3 style="margin-top:0;">Import from CSV</h3>
+    <p class="muted" style="font-size:13px;">
+        Bulk-seed the store without calling Graph. Rows that already came from Graph are left alone —
+        live directory data outranks a CSV. Up to 2 MB.
+    </p>
+    <form method="post" action="/portal/tenants/{{ tenant.id }}/profiles/import" enctype="multipart/form-data">
+        <input type="hidden" name="_csrf" value="{{ csrf_token }}">
+        <input type="file" name="file" accept=".csv,.txt" required>
+        <button type="submit" class="btn btn-primary" style="margin-top:0;margin-left:8px;">Import CSV</button>
+    </form>
+    <p class="muted" style="font-size:13px;">
+        Export from Entra admin center → Users → Download users.
+    </p>
+</div>
+{% endblock %}

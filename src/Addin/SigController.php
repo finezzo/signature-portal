@@ -31,6 +31,8 @@ use Psr\Http\Message\ServerRequestInterface;
  *
  *   Responses:
  *     200 text/html with X-Sig-Shared: true|false  — render this signature
+ *         plus X-Sig-Profile-Source: graph|cache   — live Graph data, or the
+ *         local profile store because Graph was unreachable
  *     204                                          — no rule matched; do nothing
  *     401                                          — bad tenant or key
  *     404                                          — sender/primary not in Graph
@@ -116,6 +118,10 @@ final class SigController
         return $response
             ->withStatus(200)
             ->withHeader('Content-Type', 'text/html; charset=UTF-8')
+            // Tells the add-in (and ops) whether the profile behind this
+            // signature came live from Graph or from the local store because
+            // Graph was unreachable.
+            ->withHeader('X-Sig-Profile-Source', $result->fromCache ? 'cache' : 'graph')
             ->withHeader('Cache-Control', 'private, no-store');
     }
 

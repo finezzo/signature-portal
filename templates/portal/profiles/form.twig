@@ -1,0 +1,105 @@
+{% extends "portal/layout.twig" %}
+{% block title %}{{ profile ? 'Edit profile' : 'New profile' }} — {{ tenant.name }}{% endblock %}
+
+{% block sub_nav %}{% include 'portal/_tenant_nav.twig' with {'tenant': tenant, 'active': 'profiles'} %}{% endblock %}
+
+{% block content %}
+<div class="card" style="max-width:640px;">
+    <h2>{{ profile ? 'Edit profile' : 'New profile' }}</h2>
+
+    {% if errors %}
+        <div class="alert alert-error">
+            <ul style="margin:0;padding-left:18px;">
+                {% for e in errors %}<li>{{ e }}</li>{% endfor %}
+            </ul>
+        </div>
+    {% endif %}
+
+    {% if profile and profile.source == 'graph' %}
+        <div class="alert alert-error">
+            This profile came from Microsoft Graph (last synced {{ profile.storedAt() }}). Saving marks it as
+            edited by hand — the next successful Graph lookup will overwrite your changes.
+        </div>
+    {% endif %}
+
+    <form method="post" action="{{ profile ? '/portal/tenants/' ~ tenant.id ~ '/profiles/' ~ profile.id : '/portal/tenants/' ~ tenant.id ~ '/profiles' }}">
+        <input type="hidden" name="_csrf" value="{{ csrf_token }}">
+
+        <label for="email">Email (lookup key)</label>
+        <input id="email" name="email" type="email" value="{{ form.email }}" required placeholder="anna.beispiel@example.com">
+        <div class="muted" style="font-size:13px;">
+            The address the add-in queries — the mailbox UPN. Stored lower-case; match is case-insensitive.
+        </div>
+
+        <h3>Name</h3>
+
+        <label for="given_name">First name</label>
+        <input id="given_name" name="given_name" type="text" value="{{ form.given_name }}">
+
+        <label for="surname">Last name</label>
+        <input id="surname" name="surname" type="text" value="{{ form.surname }}">
+
+        <label for="display_name">Display name</label>
+        <input id="display_name" name="display_name" type="text" value="{{ form.display_name }}">
+
+        <h3>Role</h3>
+
+        <label for="job_title">Job title</label>
+        <input id="job_title" name="job_title" type="text" value="{{ form.job_title }}">
+
+        <label for="department">Department</label>
+        <input id="department" name="department" type="text" value="{{ form.department }}">
+
+        <label for="company_name">Company</label>
+        <input id="company_name" name="company_name" type="text" value="{{ form.company_name }}">
+
+        <label for="office_location">Office location</label>
+        <input id="office_location" name="office_location" type="text" value="{{ form.office_location }}">
+
+        <label for="employee_id">Employee ID</label>
+        <input id="employee_id" name="employee_id" type="text" value="{{ form.employee_id }}">
+
+        <h3>Contact</h3>
+
+        <label for="mail">Mail address</label>
+        <input id="mail" name="mail" type="email" value="{{ form.mail }}" placeholder="Leave blank to reuse the address above">
+        <div class="muted" style="font-size:13px;">Graph's <code>mail</code> property — usually identical to the lookup key.</div>
+
+        <label for="mobile_phone">Mobile phone</label>
+        <input id="mobile_phone" name="mobile_phone" type="text" value="{{ form.mobile_phone }}">
+
+        <label for="business_phones">Business phones</label>
+        <textarea id="business_phones" name="business_phones" rows="3">{{ form.business_phones }}</textarea>
+        <div class="muted" style="font-size:13px;">One per line.</div>
+
+        <h3>Address</h3>
+
+        <label for="street_address">Street</label>
+        <input id="street_address" name="street_address" type="text" value="{{ form.street_address }}">
+
+        <label for="postal_code">Postal code</label>
+        <input id="postal_code" name="postal_code" type="text" value="{{ form.postal_code }}">
+
+        <label for="city">City</label>
+        <input id="city" name="city" type="text" value="{{ form.city }}">
+
+        <label for="country">Country</label>
+        <input id="country" name="country" type="text" value="{{ form.country }}">
+
+        <h3>Other</h3>
+
+        <label for="preferred_language">Preferred language</label>
+        <input id="preferred_language" name="preferred_language" type="text" value="{{ form.preferred_language }}" maxlength="16">
+        <div class="muted" style="font-size:13px;">e.g. <code>de</code> or <code>en</code> — used to match language rules.</div>
+
+        <label class="check-inline" style="margin-top:16px;">
+            <input type="checkbox" name="licensed" value="1" {{ form.licensed ? 'checked' : '' }}>
+            Licensed user
+        </label>
+        <div class="muted" style="font-size:13px;">Uncheck only for shared mailboxes.</div>
+
+        <button type="submit" class="btn btn-primary" style="margin-top:16px;">{{ profile ? 'Save changes' : 'Add profile' }}</button>
+        <a class="btn" href="/portal/tenants/{{ tenant.id }}/profiles" style="margin-left:8px;">Cancel</a>
+    </form>
+</div>
+{% endblock %}

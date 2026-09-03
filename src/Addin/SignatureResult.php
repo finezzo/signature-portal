@@ -15,11 +15,14 @@ final class SignatureResult
         public readonly string $html,
         public readonly string $error,
         public readonly bool $sharedMailbox,
+        /** True when the profile behind this signature came from the local
+         *  store because Graph was unreachable. */
+        public readonly bool $fromCache = false,
     ) {}
 
-    public static function ok(string $html, bool $sharedMailbox): self
+    public static function ok(string $html, bool $sharedMailbox, bool $fromCache = false): self
     {
-        return new self(self::KIND_OK, 200, $html, '', $sharedMailbox);
+        return new self(self::KIND_OK, 200, $html, '', $sharedMailbox, $fromCache);
     }
 
     public static function noMatch(bool $sharedMailbox): self

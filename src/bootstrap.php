@@ -16,6 +16,7 @@ use App\Config\Config;
 use App\Crypto\Encryption;
 use App\Db\Database;
 use App\Graph\GraphClient;
+use App\Graph\ProfileResolver;
 use App\Graph\TokenCache;
 use App\Auth\PasswordResetService;
 use App\Http\Middleware\AuthMiddleware;
@@ -27,6 +28,7 @@ use App\Http\RateLimiter;
 use App\Mail\Mailer;
 use App\Tenant\AssetRepository;
 use App\Tenant\DisplayEmailDeriver;
+use App\Tenant\ProfileRepository;
 use App\Tenant\RecipientClassifier;
 use App\Tenant\RuleEngine;
 use App\Tenant\RuleRepository;
@@ -160,6 +162,13 @@ return (static function (): \Slim\App {
         $c->get(TokenCache::class),
         $c->get(Encryption::class),
     ));
+    // Local profile store + the resolver that writes through to it, so the
+    // pipeline survives Graph being unreachable (blocked hosting IP, outage).
+    $container->set(ProfileRepository::class,  fn(Container $c) => new ProfileRepository($c->get(\PDO::class)));
+    $container->set(ProfileResolver::class,    fn(Container $c) => new ProfileResolver(
+        $c->get(GraphClient::class),
+        $c->get(ProfileRepository::class),
+    ));
     $container->set(DisplayEmailDeriver::class,fn() => new DisplayEmailDeriver());
     $container->set(SignatureService::class,   fn(Container $c) => new SignatureService(
         $c->get(TenantRepository::class),
@@ -167,7 +176,7 @@ return (static function (): \Slim\App {
         $c->get(TemplateRepository::class),
         $c->get(RuleEngine::class),
         $c->get(TemplateRenderer::class),
-        $c->get(GraphClient::class),
+        $c->get(ProfileResolver::class),
         $c->get(DisplayEmailDeriver::class),
         $c->get(UserOverrideRepository::class),
     ));

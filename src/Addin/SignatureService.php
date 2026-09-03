@@ -3,9 +3,8 @@ declare(strict_types=1);
 
 namespace App\Addin;
 
-use App\Graph\GraphClient;
 use App\Graph\GraphException;
-use App\Graph\UserProfile;
+use App\Graph\ProfileResolver;
 use App\Tenant\DisplayEmailDeriver;
 use App\Tenant\RuleContext;
 use App\Tenant\RuleEngine;
@@ -19,7 +18,8 @@ use App\Tenant\UserOverrideRepository;
 /**
  * Orchestrates the live signature pipeline:
  *   tenant + key validation
- *   → Graph profile resolution (with shared-mailbox primary-user fallback)
+ *   → profile resolution via ProfileResolver — Graph first, local store when
+ *     Graph is unreachable (with shared-mailbox primary-user fallback)
  *   → display email derivation
  *   → rule selection
  *   → template render with profile tokens
@@ -34,7 +34,7 @@ final class SignatureService
         private readonly TemplateRepository $templates,
         private readonly RuleEngine $engine,
         private readonly TemplateRenderer $renderer,
-        private readonly GraphClient $graph,
+        private readonly ProfileResolver $resolver,
         private readonly DisplayEmailDeriver $displayEmail,
         private readonly UserOverrideRepository $overrides,
     ) {}
@@ -61,12 +61,20 @@ final class SignatureService
         // In both cases we re-fetch the primary user's profile and use that
         // for token rendering (name, title, phone) while keeping the FROM
         // address as the display email.
+        //
+        // Lookups go through ProfileResolver, which writes every successful
+        // Graph response through to the local profile store and replays it
+        // when Graph is unreachable. `$fromCache` records whether the profile
+        // that ends up rendering the signature was live or stored.
+        $fromCache = false;
         try {
-            $fromProfile  = $this->graph->getUserProfile($tenant, $req->fromEmail);
+            $fromRes      = $this->resolver->resolve($tenant, $req->fromEmail);
+            $fromProfile  = $fromRes?->profile;
             $isSharedFrom = $fromProfile === null || $fromProfile->looksLikeSharedMailbox();
 
             if (!$isSharedFrom) {
-                $profile = $fromProfile;
+                $profile   = $fromProfile;
+                $fromCache = $fromRes->fromCache;
             } else {
                 if ($req->primaryEmail === '' || $req->primaryEmail === $req->fromEmail) {
                     // Shared mailbox detected but no primary user to fall back to.
@@ -77,19 +85,38 @@ final class SignatureService
                     }
                     return SignatureResult::error(404, 'shared mailbox detected but no primary user supplied');
                 }
-                $profile = $this->graph->getUserProfile($tenant, $req->primaryEmail);
-                if ($profile === null) {
+                $primaryRes = $this->resolver->resolve($tenant, $req->primaryEmail);
+                if ($primaryRes === null) {
                     return SignatureResult::error(404, 'primary user not found in Graph');
                 }
+                $profile   = $primaryRes->profile;
+                $fromCache = $primaryRes->fromCache;
             }
         } catch (GraphException $e) {
-            // Don't reflect the Graph message back to the caller — it
-            // contains the email address that was queried, which would let
-            // an API-key holder enumerate users by triggering Graph errors.
-            // Server-side log keeps the diagnostic for ops.
-            error_log('[/api/sig] Graph lookup failed for tenant '
-                . $tenant->slug . ': ' . $e->getMessage());
-            return SignatureResult::error(502, 'graph lookup failed');
+            // Graph is unreachable AND nothing is stored for the FROM address.
+            // One last chance before giving up: the overwhelmingly common shape
+            // of this request is "person sends from a shared mailbox", where the
+            // FROM address may well have never been cached but the primary user
+            // has. Treat that as the shared-mailbox path — which is what a live
+            // Graph run would have concluded anyway — and continue below.
+            $primaryRes = ($req->primaryEmail !== '' && $req->primaryEmail !== $req->fromEmail)
+                ? $this->resolver->cached($tenant, $req->primaryEmail)
+                : null;
+
+            if ($primaryRes === null) {
+                // Don't reflect the Graph message back to the caller — it may
+                // describe the address that was queried, which would let an
+                // API-key holder enumerate users by triggering Graph errors.
+                // Server-side log keeps the diagnostic for ops; no email
+                // addresses in it, per CLAUDE.md.
+                error_log('[/api/sig] Graph lookup failed for tenant '
+                    . $tenant->slug . ' (no cached profile): ' . $e->getMessage());
+                return SignatureResult::error(502, 'graph lookup failed');
+            }
+
+            $profile      = $primaryRes->profile;
+            $isSharedFrom = true;
+            $fromCache    = true;
         }
 
         // Per-domain override of the display mode beats the tenant default —
@@ -160,7 +187,7 @@ final class SignatureService
             $rendered .= $this->renderer->render($tenant->disclaimerHtml, $tokens);
         }
 
-        return SignatureResult::ok($rendered, $isSharedFrom);
+        return SignatureResult::ok($rendered, $isSharedFrom, $fromCache);
     }
 
     /**

@@ -3,8 +3,9 @@ declare(strict_types=1);
 
 namespace App\Portal;
 
-use App\Graph\GraphClient;
 use App\Graph\GraphException;
+use App\Graph\ProfileResolver;
+use App\Graph\UserProfile;
 use App\Tenant\DisplayEmailDeriver;
 use App\Tenant\RuleContext;
 use App\Tenant\RuleEngine;
@@ -32,7 +33,7 @@ final class SimulatorController
         private readonly TemplateRepository $templates,
         private readonly RuleEngine $engine,
         private readonly TemplateRenderer $renderer,
-        private readonly GraphClient $graph,
+        private readonly ProfileResolver $resolver,
         private readonly DisplayEmailDeriver $displayEmail,
         private readonly UserOverrideRepository $overrides,
     ) {}
@@ -69,57 +70,89 @@ final class SimulatorController
             preg_split('/[\s,;]+/', $form['recipients']) ?: []
         )));
 
-        // If "Use live Graph data" is set, fetch the actual user profile from
-        // Graph and derive language/mailbox-type/email-token from it just
-        // like SignatureService would. Falls back to whatever the form
-        // overrode, like the live pipeline does.
+        // If "Use live Graph data" is set, resolve the actual user profile and
+        // derive language/mailbox-type/email-token from it just like
+        // SignatureService would. Falls back to whatever the form overrode,
+        // like the live pipeline does. The resolver reads the local profile
+        // store when Graph is unreachable, so the simulator shows the same
+        // stale-but-working data the add-in would receive.
         $tokens         = TemplateRenderer::sampleTokens();
         $tokenSource    = 'sample';
         $liveEmailToken = null;
         $isSharedFrom   = false;
         $graphError     = null;
+        $cacheStoredAt  = null;
         $resolvedLang   = $form['language'] !== '' ? $form['language'] : null;
         $resolvedMtype  = $form['mailbox_type'] !== '' ? $form['mailbox_type'] : null;
 
         if ($form['use_live_data'] && $form['from_email'] !== '') {
+            $fromLookupSucceeded = false;
             try {
-                $fromProfile  = $this->graph->getUserProfile($tenant, $form['from_email']);
+                $fromResolved = $this->resolver->resolve($tenant, $form['from_email']);
+                $fromLookupSucceeded = true;
+                $fromProfile  = $fromResolved?->profile;
                 $isSharedFrom = $fromProfile === null || $fromProfile->looksLikeSharedMailbox();
 
                 if (!$isSharedFrom) {
-                    $profile = $fromProfile;
+                    $used = $fromResolved;
                 } else {
                     $primary = $form['primary_email'] !== '' ? $form['primary_email'] : $form['from_email'];
-                    $profile = $primary !== $form['from_email']
-                        ? $this->graph->getUserProfile($tenant, $primary)
+                    $used = $primary !== $form['from_email']
+                        ? $this->resolver->resolve($tenant, $primary)
                         : null;
-                    if ($profile === null) {
+                    if ($used === null) {
                         // Couldn't fully resolve — use whatever shape we have
                         // so the simulator still shows something useful.
-                        $profile = $fromProfile;
+                        $used = $fromResolved;
                     }
                 }
 
-                if ($profile !== null) {
-                    $fromDomain = mb_strtolower((string) substr(strrchr($form['from_email'], '@') ?: '@', 1));
-                    $liveEmailToken = $isSharedFrom
-                        ? $this->displayEmail->deriveForSharedMailbox(
-                              $profile,
-                              $form['from_email'],
-                              $tenant->displayModeForDomain($fromDomain),
-                          )
-                        : ($profile->mail ?? $profile->userPrincipalName);
-                    $tokens      = TemplateRenderer::tokensFromProfile($profile, $liveEmailToken);
-                    $tokenSource = 'graph';
+                $profile = $used?->profile;
+                if ($profile !== null && $used !== null) {
+                    $derived        = $this->deriveFromProfile($tenant, $profile, $form['from_email'], $isSharedFrom);
+                    $liveEmailToken = $derived['email'];
+                    $tokens         = $derived['tokens'];
+                    // Provenance follows whichever lookup supplied the profile
+                    // that was actually rendered.
+                    $tokenSource   = $used->fromCache ? 'cache' : 'graph';
+                    $cacheStoredAt = $used->fromCache ? $used->storedAt : null;
                     if ($form['language'] === '') {
-                        $resolvedLang = $profile->shortLanguage();
+                        $resolvedLang = $derived['language'];
                     }
                     if ($form['mailbox_type'] === '') {
-                        $resolvedMtype = $isSharedFrom ? 'shared' : 'personal';
+                        $resolvedMtype = $derived['mailbox_type'];
                     }
                 }
             } catch (GraphException $e) {
-                $graphError  = $e->getMessage();
+                // Graph is down and the address it choked on had nothing stored.
+                // The primary user's stored row is the last chance before
+                // dropping back to sample tokens.
+                $graphError = $e->getMessage();
+
+                $primary = $form['primary_email'] !== '' && $form['primary_email'] !== $form['from_email']
+                    ? $form['primary_email']
+                    : $form['from_email'];
+                $cached = $this->resolver->cached($tenant, $primary);
+
+                if ($cached !== null) {
+                    // If the FROM lookup is what failed, the rendered profile
+                    // belongs to the primary user and not to the FROM mailbox —
+                    // the same shape as a shared-mailbox send. A shared-mailbox
+                    // verdict the FROM lookup already reached before the
+                    // primary lookup threw is kept.
+                    $isSharedFrom   = $isSharedFrom || !$fromLookupSucceeded;
+                    $derived        = $this->deriveFromProfile($tenant, $cached->profile, $form['from_email'], $isSharedFrom);
+                    $liveEmailToken = $derived['email'];
+                    $tokens         = $derived['tokens'];
+                    $tokenSource    = 'cache';
+                    $cacheStoredAt  = $cached->storedAt;
+                    if ($form['language'] === '') {
+                        $resolvedLang = $derived['language'];
+                    }
+                    if ($form['mailbox_type'] === '') {
+                        $resolvedMtype = $derived['mailbox_type'];
+                    }
+                }
             }
         }
 
@@ -160,19 +193,50 @@ final class SimulatorController
             'tenant' => $tenant,
             'form'   => $form,
             'result' => [
-                'context'       => $ctx,
-                'recipients'    => $recipients,
-                'rule'          => $rule,
-                'override'      => $override,
-                'template'      => $template,
-                'rendered_html' => $rendered,
-                'reasons'       => $explain['reasons'],
-                'token_source'  => $tokenSource,
-                'is_shared'     => $isSharedFrom,
-                'live_email'    => $liveEmailToken,
-                'graph_error'   => $graphError,
+                'context'         => $ctx,
+                'recipients'      => $recipients,
+                'rule'            => $rule,
+                'override'        => $override,
+                'template'        => $template,
+                'rendered_html'   => $rendered,
+                'reasons'         => $explain['reasons'],
+                'token_source'    => $tokenSource,
+                'is_shared'       => $isSharedFrom,
+                'live_email'      => $liveEmailToken,
+                'graph_error'     => $graphError,
+                'cache_stored_at' => $cacheStoredAt,
             ],
         ]);
+    }
+
+    /**
+     * Everything the result view needs from one resolved profile — shared by
+     * the normal path and the cache-fallback path so both derive the display
+     * email, language and mailbox type identically.
+     *
+     * @return array{tokens: array<string,string>, email: string, language: ?string, mailbox_type: string}
+     */
+    private function deriveFromProfile(
+        \App\Tenant\Tenant $tenant,
+        UserProfile $profile,
+        string $fromEmail,
+        bool $isShared,
+    ): array {
+        $fromDomain = mb_strtolower((string) substr(strrchr($fromEmail, '@') ?: '@', 1));
+        $email      = $isShared
+            ? $this->displayEmail->deriveForSharedMailbox(
+                  $profile,
+                  $fromEmail,
+                  $tenant->displayModeForDomain($fromDomain),
+              )
+            : ($profile->mail ?? $profile->userPrincipalName);
+
+        return [
+            'tokens'       => TemplateRenderer::tokensFromProfile($profile, $email),
+            'email'        => $email,
+            'language'     => $profile->shortLanguage(),
+            'mailbox_type' => $isShared ? 'shared' : 'personal',
+        ];
     }
 
     /** @return array{0:\App\Tenant\Tenant|null, 1:?ResponseInterface} */

@@ -24,6 +24,7 @@
     <a href="/portal/tenants/{{ tenant.id }}/assets"    class="{{ active == 'assets'    ? 'active' : '' }}">Images</a>
     <a href="/portal/tenants/{{ tenant.id }}/rules"     class="{{ active == 'rules'     ? 'active' : '' }}">Rules</a>
     <a href="/portal/tenants/{{ tenant.id }}/overrides" class="{{ active == 'overrides' ? 'active' : '' }}">Overrides</a>
+    <a href="/portal/tenants/{{ tenant.id }}/profiles"  class="{{ active == 'profiles'  ? 'active' : '' }}">Profiles</a>
     <a href="/portal/tenants/{{ tenant.id }}/simulator" class="{{ active == 'simulator' ? 'active' : '' }}">Simulator</a>
     <a href="/portal/tenants/{{ tenant.id }}/activity"  class="{{ active == 'activity'  ? 'active' : '' }}">Activity</a>
     {% if is_tenant_admin %}

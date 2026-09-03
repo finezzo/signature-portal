@@ -9,6 +9,7 @@ use App\Portal\AuditController;
 use App\Portal\AuthController;
 use App\Portal\DashboardController;
 use App\Portal\PasswordResetController;
+use App\Portal\ProfileController;
 use App\Portal\RuleController;
 use App\Portal\SimulatorController;
 use App\Portal\TemplateController;
@@ -102,6 +103,14 @@ return static function (App $app): void {
         $g->get('/tenants/{id:[0-9]+}/overrides/{oid:[0-9]+}/edit',     [UserOverrideController::class, 'editForm']);
         $g->post('/tenants/{id:[0-9]+}/overrides/{oid:[0-9]+}',         [UserOverrideController::class, 'update']);
         $g->post('/tenants/{id:[0-9]+}/overrides/{oid:[0-9]+}/delete',  [UserOverrideController::class, 'delete']);
+
+        $g->get('/tenants/{id:[0-9]+}/profiles',                        [ProfileController::class, 'index']);
+        $g->get('/tenants/{id:[0-9]+}/profiles/new',                    [ProfileController::class, 'newForm']);
+        $g->post('/tenants/{id:[0-9]+}/profiles',                       [ProfileController::class, 'create']);
+        $g->post('/tenants/{id:[0-9]+}/profiles/import',                [ProfileController::class, 'import']);
+        $g->get('/tenants/{id:[0-9]+}/profiles/{pid:[0-9]+}/edit',      [ProfileController::class, 'editForm']);
+        $g->post('/tenants/{id:[0-9]+}/profiles/{pid:[0-9]+}',          [ProfileController::class, 'update']);
+        $g->post('/tenants/{id:[0-9]+}/profiles/{pid:[0-9]+}/delete',   [ProfileController::class, 'delete']);
 
         $g->get('/tenants/{id:[0-9]+}/activity',   [AuditController::class, 'tenantActivity']);
 

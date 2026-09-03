@@ -58,10 +58,18 @@
             <p class="muted">Submit the form to run a simulation.</p>
         {% else %}
             {% if result.graph_error %}
-                <div class="alert alert-error">
-                    Graph lookup failed — falling back to sample data.<br>
-                    <code style="font-size:12px;">{{ result.graph_error }}</code>
-                </div>
+                {% if result.token_source == 'cache' %}
+                    <div class="alert">
+                        Graph unreachable — using the stored profile
+                        {%- if result.cache_stored_at %} from {{ result.cache_stored_at }}{% endif %}.<br>
+                        <code style="font-size:12px;">{{ result.graph_error }}</code>
+                    </div>
+                {% else %}
+                    <div class="alert alert-error">
+                        Graph lookup failed — falling back to sample data.<br>
+                        <code style="font-size:12px;">{{ result.graph_error }}</code>
+                    </div>
+                {% endif %}
             {% endif %}
 
             {% if result.override %}
@@ -112,6 +120,9 @@
                     {% if result.token_source == 'graph' %}
                         <span class="badge badge-int">live Graph profile</span>
                         {% if result.live_email %}<br><code style="font-size:12px;">{email} → {{ result.live_email }}</code>{% endif %}
+                    {% elseif result.token_source == 'cache' %}
+                        <span class="badge badge-ext">stored profile{% if result.cache_stored_at %} (from {{ result.cache_stored_at }}){% endif %}</span>
+                        {% if result.live_email %}<br><code style="font-size:12px;">{email} → {{ result.live_email }}</code>{% endif %}
                     {% else %}
                         <span class="badge">sample data</span>
                     {% endif %}
@@ -123,7 +134,7 @@
 
 {% if result and result.rendered_html %}
 <div style="margin-top:24px;">
-    <h3>Rendered signature{% if result.token_source == 'graph' %} <span class="muted" style="font-size:13px;font-weight:normal;">— with live Graph data</span>{% endif %}</h3>
+    <h3>Rendered signature{% if result.token_source == 'graph' %} <span class="muted" style="font-size:13px;font-weight:normal;">— with live Graph data</span>{% elseif result.token_source == 'cache' %} <span class="muted" style="font-size:13px;font-weight:normal;">— with the stored profile</span>{% endif %}</h3>
     <iframe sandbox="allow-same-origin"
             srcdoc="{{ result.rendered_html|e('html_attr') }}"
             style="width:100%;height:300px;border:1px solid var(--border);border-radius:6px;background:#fff;"></iframe>
