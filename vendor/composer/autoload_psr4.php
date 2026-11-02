@@ -9,6 +9,7 @@ return array(
     'Twig\\' => array($vendorDir . '/twig/twig/src'),
     'TheNetworg\\OAuth2\\Client\\' => array($vendorDir . '/thenetworg/oauth2-azure/src'),
     'Symfony\\Polyfill\\Php81\\' => array($vendorDir . '/symfony/polyfill-php81'),
+    'Symfony\\Polyfill\\Php80\\' => array($vendorDir . '/symfony/polyfill-php80'),
     'Symfony\\Polyfill\\Mbstring\\' => array($vendorDir . '/symfony/polyfill-mbstring'),
     'Symfony\\Polyfill\\Ctype\\' => array($vendorDir . '/symfony/polyfill-ctype'),
     'Slim\\Views\\' => array($vendorDir . '/slim/twig-view/src'),
