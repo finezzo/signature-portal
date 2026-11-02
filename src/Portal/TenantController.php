@@ -225,8 +225,9 @@ final class TenantController
             // be removed explicitly so a recreated tenant with the same slug
             // doesn't inherit old images.
             $this->assets->dropTenant($tenant->slug);
-            // tenant_id will be set to NULL by the FK so the entry survives.
-            $this->audit->record($tenant->id, 'tenant.deleted', 'tenant', $tenant->id, "Tenant '{$tenant->name}' deleted");
+            // tenant_id NULL: the row is gone, so its id would violate the FK and
+            // turn the finished delete into a 500 without an audit entry.
+            $this->audit->record(null, 'tenant.deleted', 'tenant', $tenant->id, "Tenant '{$tenant->name}' deleted");
         }
         $this->session->flash('success', 'Tenant deleted.');
         return $response->withHeader('Location', '/portal/tenants')->withStatus(302);

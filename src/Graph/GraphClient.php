@@ -73,7 +73,9 @@ final class GraphClient
             // email addresses. The HTTP status is the useful diagnostic.
             throw new GraphException("Graph user lookup failed (HTTP {$status}).", 0, $e);
         } catch (GuzzleException $e) {
-            throw new GraphException("Graph network error: " . $e->getMessage(), 0, $e);
+            // Guzzle's message quotes the full URL, which contains the address
+            // looked up. It reaches the logs downstream (see SignatureService).
+            throw new GraphException('Graph network error: ' . preg_replace('~https?://\S+~', '[url]', $e->getMessage()), 0, $e);
         }
 
         $body = json_decode((string) $resp->getBody(), true);

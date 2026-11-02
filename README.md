@@ -161,7 +161,7 @@ All runtime config lives in `config/config.php`. The installer creates it; you c
 - **Failed-login lockout** — 5 wrong attempts in 10 minutes locks the local account for 15 minutes, with constant-time handling that doesn't leak which emails have an account. SSO sign-ins are unaffected.
 - **Password changes end other sessions** — any password change (self-service, admin reset, or reset link) immediately invalidates every other session of that user. Reset links are single-use, stored only as SHA-256 hashes, and expire after 30 minutes.
 - **Installer is token-gated** — `public/install.php` requires a one-time token written to `config/.install_token` (outside the web root), so a freshly deployed instance can't be claimed by a stranger. Delete the installer after use anyway.
-- **Hardening headers** — `X-Content-Type-Options: nosniff`, `X-Frame-Options: SAMEORIGIN`, `Referrer-Policy: strict-origin-when-cross-origin` in `public/.htaccess`; a Content-Security-Policy for the portal UI is set in PHP (`SecurityHeadersMiddleware`). `config/`, `var/`, and `migrations/` carry deny-all `.htaccess` files as a safety net against docroot misconfiguration.
+- **Hardening headers** — `SecurityHeadersMiddleware` sets a Content-Security-Policy, HSTS, `X-Frame-Options`, `X-Content-Type-Options` and `Referrer-Policy` on PHP responses; `public/.htaccess` covers static files, forces HTTPS for the portal and refuses dotfiles. `config/`, `var/`, and `migrations/` carry deny-all `.htaccess` files as a safety net against docroot misconfiguration.
 - **Append-only audit log** — every mutation (template, rule, override, user, API key) is recorded with actor email and IP, viewable per tenant under *Activity*.
 
 ## Roadmap

@@ -66,7 +66,7 @@ final class SigController
         $key = $request->getHeaderLine('X-Sig-Key');
 
         $req = new SignatureRequest(
-            tenantSlug:   trim((string) ($q['tenant']  ?? '')),
+            tenantSlug:   mb_strtolower(trim((string) ($q['tenant'] ?? ''))),
             apiKey:       $key,
             fromEmail:    mb_strtolower(trim((string) ($q['email']   ?? ''))),
             primaryEmail: mb_strtolower(trim((string) ($q['primary'] ?? ''))),
@@ -87,13 +87,15 @@ final class SigController
         //  - per client IP for auth FAILURES → slows down key guessing. The
         //    bucket is only incremented after an actual 401 (below); here we
         //    just refuse IPs that are already over the limit.
-        //  - per tenant slug for everything → caps what a leaked key can
-        //    exfiltrate per minute (directory enumeration).
+        //  - per tenant slug → caps what a leaked key can exfiltrate per minute
+        //    (directory enumeration). Only requests with a valid key count: the
+        //    slug is public, so counting failures would let anyone without a key
+        //    use up the tenant's budget and stop signatures for everyone.
         $ip = (string) ($request->getServerParams()['REMOTE_ADDR'] ?? 'unknown');
         if (!$this->limiter->check('sigfail:' . $ip, self::FAILURE_LIMIT_PER_MINUTE, 60)) {
             return $this->tooManyRequests($response);
         }
-        if (!$this->limiter->hit('sig:' . $req->tenantSlug, self::TENANT_LIMIT_PER_MINUTE, 60)) {
+        if (!$this->limiter->check('sig:' . $req->tenantSlug, self::TENANT_LIMIT_PER_MINUTE, 60)) {
             return $this->tooManyRequests($response);
         }
 
@@ -101,6 +103,8 @@ final class SigController
 
         if ($result->kind === SignatureResult::KIND_ERROR && $result->status === 401) {
             $this->limiter->hit('sigfail:' . $ip, self::FAILURE_LIMIT_PER_MINUTE, 60);
+        } else {
+            $this->limiter->hit('sig:' . $req->tenantSlug, self::TENANT_LIMIT_PER_MINUTE, 60);
         }
 
         // Always set X-Sig-Shared so the add-in can show consistent UI.
@@ -128,7 +132,7 @@ final class SigController
     public function listTemplates(ServerRequestInterface $request, ResponseInterface $response): ResponseInterface
     {
         $q      = $request->getQueryParams();
-        $tenant = trim((string) ($q['tenant'] ?? ''));
+        $tenant = mb_strtolower(trim((string) ($q['tenant'] ?? '')));
         $key    = $request->getHeaderLine('X-Sig-Key');
 
         if ($tenant === '' || $key === '') {
@@ -142,7 +146,7 @@ final class SigController
         if (!$this->limiter->check('sigfail:' . $ip, self::FAILURE_LIMIT_PER_MINUTE, 60)) {
             return $this->tooManyRequests($response);
         }
-        if (!$this->limiter->hit('sig:' . $tenant, self::TENANT_LIMIT_PER_MINUTE, 60)) {
+        if (!$this->limiter->check('sig:' . $tenant, self::TENANT_LIMIT_PER_MINUTE, 60)) {
             return $this->tooManyRequests($response);
         }
 
@@ -152,6 +156,7 @@ final class SigController
             $response->getBody()->write('unknown tenant or invalid api key');
             return $response->withStatus(401)->withHeader('Content-Type', 'text/plain');
         }
+        $this->limiter->hit('sig:' . $tenant, self::TENANT_LIMIT_PER_MINUTE, 60);
 
         $response->getBody()->write((string) json_encode(['templates' => $templates]));
         return $response

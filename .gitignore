@@ -4,6 +4,7 @@
 # Runtime state
 /var/cache/*
 /var/log/*
+/var/sessions/
 !/var/cache/.gitkeep
 !/var/log/.gitkeep
 
@@ -16,6 +17,10 @@
 # index.php prints internals on every request)
 /public/.user.ini
 /public/index.debug.php
+
+# Throwaway server-side maintenance scripts. They carry hardcoded access keys and
+# real tenant data, and belong outside public/ so a folder upload can't ship them.
+/tools/maintenance/
 
 # Pasted reference / sample files used while iterating
 /Signatur_*.htm

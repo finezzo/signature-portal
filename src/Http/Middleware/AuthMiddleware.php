@@ -29,7 +29,7 @@ final class AuthMiddleware implements MiddlewareInterface
         // the DB. One indexed primary-key lookup per request — cheap, and
         // it also catches deleted users.
         $user = $this->session->currentUser();
-        $stmt = $this->pdo->prepare('SELECT password_changed_at FROM users WHERE id = :id');
+        $stmt = $this->pdo->prepare('SELECT password_changed_at, role, tenant_id FROM users WHERE id = :id');
         $stmt->execute([':id' => (int) ($user['id'] ?? 0)]);
         $row = $stmt->fetch();
 
@@ -40,6 +40,13 @@ final class AuthMiddleware implements MiddlewareInterface
             $this->session->destroy();
             return $this->redirectToLogin();
         }
+
+        // Role and tenant decide what this request may do, so the database wins
+        // over the copy captured at login: a demoted or moved user loses the old
+        // rights on the next request, not whenever the session happens to end.
+        $user['role']      = (string) $row['role'];
+        $user['tenant_id'] = $row['tenant_id'] !== null ? (int) $row['tenant_id'] : null;
+        $this->session->set('user', $user);
 
         $request = $request->withAttribute('current_user', $user);
         return $handler->handle($request);

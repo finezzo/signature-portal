@@ -10,12 +10,12 @@ namespace App\Graph;
  * The signature pipeline surfaces this to the add-in as X-Sig-Profile-Source
  * so a stale signature is visibly distinguishable from a fresh one.
  */
-final readonly class ResolvedProfile
+final class ResolvedProfile
 {
     public function __construct(
-        public UserProfile $profile,
-        public bool $fromCache,
+        public readonly UserProfile $profile,
+        public readonly bool $fromCache,
         /** Timestamp the stored copy was last confirmed; null when live. */
-        public ?string $storedAt,
+        public readonly ?string $storedAt,
     ) {}
 }

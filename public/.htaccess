@@ -6,6 +6,21 @@ Options -Indexes
     RewriteEngine On
     RewriteBase /
 
+    # The debug front controller must never answer, even if it gets uploaded again.
+    RewriteRule ^index\.debug\.php$ - [R=404,L]
+
+    # Dotfiles (.DS_Store, .user.ini, ...) are never served.
+    RewriteRule (^|/)\.(?!well-known(/|$)) - [R=404,L]
+
+    # The portal is HTTPS only: the login form posts passwords. Deliberately not
+    # applied to /addin and /api/sig (manifests always use https there), so a host
+    # that reports TLS oddly can at worst affect the admin UI, never signature
+    # delivery. Any one of the three signals is enough to count as already secure.
+    RewriteCond %{HTTPS} !=on
+    RewriteCond %{SERVER_PORT} !=443
+    RewriteCond %{HTTP:X-Forwarded-Proto} !=https
+    RewriteRule ^(portal(/.*)?)?$ https://%{HTTP_HOST}/$1 [R=301,L]
+
     # Allow direct access to the installer while config/config.php does not exist.
     RewriteRule ^install\.php$ - [L]
 

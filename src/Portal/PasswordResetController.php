@@ -5,6 +5,7 @@ namespace App\Portal;
 
 use App\Auth\PasswordResetService;
 use App\Auth\SessionManager;
+use App\Http\RateLimiter;
 use Psr\Http\Message\ResponseInterface;
 use Psr\Http\Message\ServerRequestInterface;
 use Slim\Views\Twig;
@@ -17,10 +18,15 @@ use Slim\Views\Twig;
  */
 final class PasswordResetController
 {
+    /** Reset requests per client IP. Each one can send a mail, so keep it low. */
+    private const REQUEST_LIMIT  = 5;
+    private const REQUEST_WINDOW = 900;
+
     public function __construct(
         private readonly Twig $view,
         private readonly PasswordResetService $service,
         private readonly SessionManager $session,
+        private readonly RateLimiter $limiter,
     ) {}
 
     public function showForgot(ServerRequestInterface $request, ResponseInterface $response): ResponseInterface
@@ -33,7 +39,9 @@ final class PasswordResetController
         $body  = (array) $request->getParsedBody();
         $email = trim((string) ($body['email'] ?? ''));
 
-        if ($email !== '' && filter_var($email, FILTER_VALIDATE_EMAIL)) {
+        $ip = (string) ($request->getServerParams()['REMOTE_ADDR'] ?? 'unknown');
+        if ($email !== '' && filter_var($email, FILTER_VALIDATE_EMAIL)
+            && $this->limiter->hit('pwreset:' . $ip, self::REQUEST_LIMIT, self::REQUEST_WINDOW)) {
             $this->service->request($email);
         }
         // Same response regardless of outcome — see class docblock.

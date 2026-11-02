@@ -7,6 +7,7 @@ use App\Auth\Authenticator;
 use App\Auth\EntraProvider;
 use App\Auth\SessionManager;
 use App\Auth\SsoAuthenticator;
+use App\Http\RateLimiter;
 use App\Tenant\TenantRepository;
 use League\OAuth2\Client\Provider\Exception\IdentityProviderException;
 use Psr\Http\Message\ResponseInterface;
@@ -16,6 +17,14 @@ use Throwable;
 
 final class AuthController
 {
+    /**
+     * Failed sign-ins per client IP before that IP is refused for the rest of
+     * the window. Catches one address trying passwords across many accounts,
+     * which the per-account lockout cannot see.
+     */
+    private const LOGIN_FAILURE_LIMIT  = 20;
+    private const LOGIN_FAILURE_WINDOW = 900;
+
     public function __construct(
         private readonly Twig $view,
         private readonly Authenticator $auth,
@@ -23,6 +32,7 @@ final class AuthController
         private readonly TenantRepository $tenants,
         private readonly EntraProvider $entra,
         private readonly SsoAuthenticator $sso,
+        private readonly RateLimiter $limiter,
     ) {}
 
     public function showLogin(ServerRequestInterface $request, ResponseInterface $response): ResponseInterface
@@ -56,8 +66,18 @@ final class AuthController
             return $response->withHeader('Location', '/portal/login')->withStatus(302);
         }
 
+        // Only failures count, so normal use never gets near the limit. The
+        // message may be specific: it is about the IP and reveals nothing about
+        // any account.
+        $ipBucket = 'loginfail:' . (string) ($request->getServerParams()['REMOTE_ADDR'] ?? 'unknown');
+        if (!$this->limiter->check($ipBucket, self::LOGIN_FAILURE_LIMIT, self::LOGIN_FAILURE_WINDOW)) {
+            $this->session->set('flash_login_error', 'Too many failed sign-ins from your network. Please try again in a few minutes.');
+            return $response->withHeader('Location', '/portal/login')->withStatus(302);
+        }
+
         $result = $this->auth->attempt($email, $pass);
         if (!$result->ok()) {
+            $this->limiter->hit($ipBucket, self::LOGIN_FAILURE_LIMIT, self::LOGIN_FAILURE_WINDOW);
             // Generic message for every failure path — including lockout —
             // so an attacker can't probe whether an email exists by
             // triggering 5 misses and reading a different message back.

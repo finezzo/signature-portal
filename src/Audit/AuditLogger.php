@@ -55,16 +55,11 @@ final class AuditLogger
 
     private function detectIp(): ?string
     {
-        // Slim's PSR-7 doesn't make REMOTE_ADDR readable here without threading
-        // the request through to the logger; falling back to $_SERVER is fine
-        // for shared-host PHP — Apache puts the real client there.
-        $candidates = ['HTTP_X_FORWARDED_FOR', 'HTTP_X_REAL_IP', 'REMOTE_ADDR'];
-        foreach ($candidates as $k) {
-            if (!empty($_SERVER[$k])) {
-                $ip = trim(explode(',', (string) $_SERVER[$k])[0]);
-                return mb_substr($ip, 0, 45) ?: null;
-            }
-        }
-        return null;
+        // REMOTE_ADDR only. Slim's PSR-7 doesn't make it readable here without
+        // threading the request through to the logger; $_SERVER is fine for
+        // shared-host PHP. X-Forwarded-For and friends are client-supplied:
+        // honouring them would let anyone write any IP into the audit log.
+        $ip = trim((string) ($_SERVER['REMOTE_ADDR'] ?? ''));
+        return $ip !== '' ? mb_substr($ip, 0, 45) : null;
     }
 }

@@ -31,6 +31,18 @@ final class SessionManager
         // pre-sets the cookie and waits for the victim to authenticate under it.
         ini_set('session.use_strict_mode', '1');
 
+        // Keep session files in our own var/ instead of the host's default
+        // directory, which shared hosting may share between customers. No cron
+        // cleans var/, so PHP's own garbage collection has to run. Falls back to
+        // the default where var/ isn't writable rather than breaking logins.
+        $savePath = dirname(__DIR__, 2) . '/var/sessions';
+        if ((is_dir($savePath) || @mkdir($savePath, 0700, true)) && is_writable($savePath)) {
+            session_save_path($savePath);
+            ini_set('session.gc_probability', '1');
+            ini_set('session.gc_divisor', '100');
+        }
+        ini_set('session.gc_maxlifetime', (string) $lifetime);
+
         session_name($name);
         session_set_cookie_params([
             'lifetime' => $lifetime,

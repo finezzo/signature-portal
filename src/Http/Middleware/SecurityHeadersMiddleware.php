@@ -9,6 +9,10 @@ use Psr\Http\Server\MiddlewareInterface;
 use Psr\Http\Server\RequestHandlerInterface;
 
 /**
+ * Security headers for everything PHP renders. The Header directives in
+ * public/.htaccess only reach static files on the IONOS setup, so the PHP
+ * responses have to carry their own.
+ *
  * Content-Security-Policy for the portal UI (defence in depth on top of
  * HTML Purifier and the sandboxed preview iframes).
  *
@@ -38,10 +42,16 @@ final class SecurityHeadersMiddleware implements MiddlewareInterface
 
     public function process(ServerRequestInterface $request, RequestHandlerInterface $handler): ResponseInterface
     {
-        $response = $handler->handle($request);
+        $response = $handler->handle($request)->withHeader('X-Content-Type-Options', 'nosniff');
 
         if (str_starts_with($request->getUri()->getPath(), '/portal')) {
-            $response = $response->withHeader('Content-Security-Policy', self::CSP);
+            $response = $response
+                ->withHeader('Content-Security-Policy', self::CSP)
+                ->withHeader('X-Frame-Options', 'SAMEORIGIN')
+                ->withHeader('Referrer-Policy', 'strict-origin-when-cross-origin')
+                // Browsers ignore this header on plain HTTP, so it needs no check
+                // for the scheme, which is unreliable behind shared-host proxies.
+                ->withHeader('Strict-Transport-Security', 'max-age=31536000');
         }
         return $response;
     }

@@ -114,10 +114,12 @@ final class PasswordResetService
             return false;
         }
 
+        // Retires every open link of this user, not just the one used: a link
+        // still sitting in a compromised inbox must not outlive the reset.
         $this->pdo->prepare(
             'UPDATE password_resets SET used_at = NOW()
-             WHERE token_hash = :hash AND used_at IS NULL'
-        )->execute([':hash' => hash('sha256', $token)]);
+             WHERE user_id = :uid AND used_at IS NULL'
+        )->execute([':uid' => $userId]);
 
         $this->pdo->prepare(
             'UPDATE users

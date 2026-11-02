@@ -14,9 +14,8 @@ use PDO;
  * when the previous failure aged out of the window — so a careless typo a
  * day ago doesn't pile onto today's misses.
  *
- * The lockout is per-user (matched by email). Throttling by IP is harder
- * on shared hosting (no shared memory) and offers limited protection
- * against distributed bruteforce, so we don't attempt it here.
+ * The lockout is per-user (matched by email). Per-IP throttling lives in
+ * AuthController, on top of the DB-backed RateLimiter.
  */
 final class Authenticator
 {
@@ -60,6 +59,9 @@ final class Authenticator
 
         // Active lockout?
         if (!empty($user['locked_until']) && strtotime((string) $user['locked_until']) > time()) {
+            // Same bcrypt cost as a wrong password, otherwise the fast response
+            // reveals that this account exists and is currently locked.
+            $this->hasher->verify($password, self::DUMMY_HASH);
             return AuthAttemptResult::lockedUntil((string) $user['locked_until']);
         }
 
