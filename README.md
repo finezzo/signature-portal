@@ -159,6 +159,7 @@ All runtime config lives in `config/config.php`. The installer creates it; you c
 - **HTML templates are sanitised on save** with HTML Purifier — stored XSS in the portal is mitigated even if a tenant editor pastes hostile HTML.
 - **CSRF tokens** on every state-changing form, rotated on login; `session.use_strict_mode` blocks fixated session IDs. The `/api/*` namespace is exempt because it is API-key-authenticated, not session-authenticated.
 - **Failed-login lockout** — 5 wrong attempts in 10 minutes locks the local account for 15 minutes, with constant-time handling that doesn't leak which emails have an account. SSO sign-ins are unaffected.
+- **Two-factor authentication** — password sign-ins require an authenticator app code (TOTP), with one-time recovery codes. Secrets are encrypted at rest, codes can't be replayed, and wrong codes count towards the lockout. See [SETUP.md](SETUP.md#two-factor-authentication).
 - **Password changes end other sessions** — any password change (self-service, admin reset, or reset link) immediately invalidates every other session of that user. Reset links are single-use, stored only as SHA-256 hashes, and expire after 30 minutes.
 - **Installer is token-gated** — `public/install.php` requires a one-time token written to `config/.install_token` (outside the web root), so a freshly deployed instance can't be claimed by a stranger. Delete the installer after use anyway.
 - **Hardening headers** — `SecurityHeadersMiddleware` sets a Content-Security-Policy, HSTS, `X-Frame-Options`, `X-Content-Type-Options` and `Referrer-Policy` on PHP responses; `public/.htaccess` covers static files, forces HTTPS for the portal and refuses dotfiles. `config/`, `var/`, and `migrations/` carry deny-all `.htaccess` files as a safety net against docroot misconfiguration.
@@ -170,7 +171,6 @@ All runtime config lives in `config/config.php`. The installer creates it; you c
 - Per-tenant branding (logo, accent colour) in the portal UI
 - Template version history with rollback
 - Localisation of the portal UI
-- 2FA for local portal accounts
 - SMTP transport option for transactional mail (currently PHP `mail()`)
 
 Issues and PRs welcome.

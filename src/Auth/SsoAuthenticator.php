@@ -102,6 +102,8 @@ final class SsoAuthenticator
             // Captured so AuthMiddleware can kill this session if the password
             // changes elsewhere (self-service reset, admin reset).
             'pw_epoch'  => (string) ($user['password_changed_at'] ?? ''),
+            // Entra is the second factor's home for these sessions, see AuthMiddleware.
+            'auth_method' => 'sso',
         ]);
 
         return SsoLoginResult::success();

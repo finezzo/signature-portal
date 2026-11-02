@@ -196,6 +196,7 @@ If Microsoft rejects the redirect with `AADSTS50011: redirect URI mismatch`, the
 | `base_url` | Public HTTPS URL of the install (no trailing slash) |
 | `debug` | When `true`, unhandled exceptions render with full stack traces in the browser. **Never set true in production.** Default `false`. |
 | `auth.local.enabled` | Allow local password login |
+| `auth.local.require_mfa` | Password sign-ins must set up an authenticator app before they can use the portal. Default `true`, also when the key is missing. Entra SSO sign-ins are not affected. |
 | `auth.entra.enabled` | (Reserved — Entra SSO is configured per-tenant in the portal UI) |
 | `session.name` / `session.lifetime` | Portal session cookie name and lifetime in minutes |
 
@@ -338,6 +339,22 @@ Append-only `audit_log` table. Every mutation writes an entry: tenant.created, t
 Bcrypt password hash, PHP file-backed sessions. Failed-login lockout: **5 wrong attempts in 10 minutes → 15-minute lock** on that email. The error message is generic ("Invalid email or password") for both wrong-password and locked states, so an attacker can't enumerate accounts by triggering lockouts. Lock events are written to `error_log` for ops visibility.
 
 Self-service password change at `/portal/account`. Superadmin user-management UI at `/portal/users` for CRUD across all users.
+
+#### Two-factor authentication
+
+Every password sign-in also asks for a 6-digit code from an authenticator app (TOTP). Users set it up themselves: at their first sign-in, the portal shows nothing else until they scanned the QR code and confirmed a code. They then get 10 one-time recovery codes, shown once. Entra SSO sign-ins skip this, because their second factor is Entra's business.
+
+- **New phone:** *My account → Two-factor authentication → Remove authenticator* (password plus a code or recovery code), then set it up again. That also issues new recovery codes.
+- **Lost phone, recovery code at hand:** sign in with the recovery code, then do the same.
+- **Lost phone and recovery codes:** a superadmin clicks *Reset 2FA* under *Users*. The user sets it up again at the next sign-in. Your own factor can't be reset this way.
+- **Nobody left who can sign in:** clear it in the database, for the affected address:
+
+  ```sql
+  DELETE FROM mfa_recovery_codes WHERE user_id = (SELECT id FROM users WHERE email = 'admin@example.com');
+  UPDATE users SET mfa_secret_encrypted = NULL, mfa_enabled_at = NULL, mfa_last_step = NULL WHERE email = 'admin@example.com';
+  ```
+
+Wrong codes count towards the same lockout as wrong passwords, and correct passwords don't reset that counter until the code was right too. The secret is encrypted with `app_key`, so changing the key breaks the authenticators; recovery codes keep working. The audit log records setup, removal, resets, recovery code use and wrong codes after a correct password. A wrong code is a strong hint that the password is known to someone else.
 
 #### Entra SSO
 

@@ -3,6 +3,7 @@ declare(strict_types=1);
 
 namespace App\Auth;
 
+use App\Audit\AuditLogger;
 use PDO;
 
 /**
@@ -16,12 +17,19 @@ use PDO;
  *
  * The lockout is per-user (matched by email). Per-IP throttling lives in
  * AuthController, on top of the DB-backed RateLimiter.
+ *
+ * An account with two-factor authentication passes through a pending state: the
+ * password only earns the right to enter a code, for {@see MFA_PENDING_SECONDS}.
+ * Wrong codes count towards the same lockout as wrong passwords.
  */
 final class Authenticator
 {
     public const MAX_FAILED_ATTEMPTS    = 5;
     public const FAILURE_WINDOW_MINUTES = 10;
     public const LOCKOUT_DURATION_MINUTES = 15;
+    public const MFA_PENDING_SECONDS    = 300;
+
+    private const MFA_PENDING_KEY = 'mfa_pending';
 
     /**
      * A fixed, valid bcrypt hash (cost 10, matching PASSWORD_BCRYPT) that no
@@ -38,13 +46,15 @@ final class Authenticator
         private readonly PDO $pdo,
         private readonly PasswordHasher $hasher,
         private readonly SessionManager $session,
+        private readonly MfaService $mfa,
+        private readonly AuditLogger $audit,
     ) {}
 
     public function attempt(string $email, string $password): AuthAttemptResult
     {
         $stmt = $this->pdo->prepare(
             'SELECT id, tenant_id, email, password_hash, password_changed_at, role, name,
-                    failed_login_count, last_failed_login_at, locked_until
+                    failed_login_count, last_failed_login_at, locked_until, mfa_enabled_at
              FROM users WHERE email = :email LIMIT 1'
         );
         $stmt->execute([':email' => mb_strtolower(trim($email))]);
@@ -77,6 +87,90 @@ final class Authenticator
             ]);
         }
 
+        if (!empty($user['mfa_enabled_at'])) {
+            // The failure counter stays as it is. Resetting it here would let
+            // someone who knows the password try codes forever, by entering the
+            // password again before each lockout.
+            $this->session->regenerate();
+            $this->session->forget('user');
+            $this->session->set(self::MFA_PENDING_KEY, [
+                'id'       => (int) $user['id'],
+                'pw_epoch' => (string) ($user['password_changed_at'] ?? ''),
+                'at'       => time(),
+            ]);
+            return AuthAttemptResult::mfaRequired();
+        }
+
+        $this->signIn((array) $user);
+        return AuthAttemptResult::success();
+    }
+
+    public function hasPendingSecondFactor(): bool
+    {
+        $pending = $this->session->get(self::MFA_PENDING_KEY);
+        if (!is_array($pending)) {
+            return false;
+        }
+        if (time() - (int) $pending['at'] > self::MFA_PENDING_SECONDS) {
+            $this->session->forget(self::MFA_PENDING_KEY);
+            return false;
+        }
+        return true;
+    }
+
+    public function attemptSecondFactor(string $code): AuthAttemptResult
+    {
+        if (!$this->hasPendingSecondFactor()) {
+            return AuthAttemptResult::badCredentials();
+        }
+        $pending = (array) $this->session->get(self::MFA_PENDING_KEY);
+
+        $stmt = $this->pdo->prepare(
+            'SELECT id, tenant_id, email, password_changed_at, role, name,
+                    failed_login_count, last_failed_login_at, locked_until
+             FROM users WHERE id = :id'
+        );
+        $stmt->execute([':id' => (int) $pending['id']]);
+        $user = $stmt->fetch();
+
+        // A password change since the first step voids it, as it does a session.
+        if ($user === false || (string) ($user['password_changed_at'] ?? '') !== (string) $pending['pw_epoch']) {
+            $this->session->forget(self::MFA_PENDING_KEY);
+            return AuthAttemptResult::badCredentials();
+        }
+        if (!empty($user['locked_until']) && strtotime((string) $user['locked_until']) > time()) {
+            $this->session->forget(self::MFA_PENDING_KEY);
+            return AuthAttemptResult::lockedUntil((string) $user['locked_until']);
+        }
+
+        $tenantId = $user['tenant_id'] !== null ? (int) $user['tenant_id'] : null;
+        $factor   = $this->mfa->verifyCode((int) $user['id'], $code);
+        if ($factor === null) {
+            $lockedUntil = $this->recordFailure((array) $user);
+            // Whoever got here knows the password, which is worth a trace.
+            $this->audit->record($tenantId, 'auth.mfa.failed', 'user', (int) $user['id'], 'Wrong two-factor code after a correct password');
+            if ($lockedUntil !== null) {
+                $this->session->forget(self::MFA_PENDING_KEY);
+                return AuthAttemptResult::lockedUntil($lockedUntil);
+            }
+            return AuthAttemptResult::badCredentials();
+        }
+
+        $this->signIn((array) $user);
+        if ($factor === MfaService::FACTOR_RECOVERY) {
+            $this->audit->record($tenantId, 'auth.mfa.recovery_used', 'user', (int) $user['id'], 'Signed in with a recovery code');
+        }
+        return AuthAttemptResult::success($factor);
+    }
+
+    public function logout(): void
+    {
+        $this->session->destroy();
+    }
+
+    /** @param array<string,mixed> $user */
+    private function signIn(array $user): void
+    {
         $this->pdo->prepare(
             'UPDATE users
              SET last_login_at = NOW(),
@@ -87,6 +181,7 @@ final class Authenticator
         )->execute([':id' => (int) $user['id']]);
 
         $this->session->regenerate();
+        $this->session->forget(self::MFA_PENDING_KEY);
         $this->session->set('user', [
             'id'        => (int) $user['id'],
             'email'     => (string) $user['email'],
@@ -96,17 +191,16 @@ final class Authenticator
             // Captured so AuthMiddleware can kill this session if the password
             // changes elsewhere (self-service reset, admin reset).
             'pw_epoch'  => (string) ($user['password_changed_at'] ?? ''),
+            // AuthMiddleware asks password sessions for a second factor, not SSO ones.
+            'auth_method' => 'local',
         ]);
-        return AuthAttemptResult::success();
     }
 
-    public function logout(): void
-    {
-        $this->session->destroy();
-    }
-
-    /** @param array<string,mixed> $user */
-    private function recordFailure(array $user): void
+    /**
+     * @param array<string,mixed> $user
+     * @return string|null when the account is now locked until, if this locked it
+     */
+    private function recordFailure(array $user): ?string
     {
         $now      = time();
         $lastFail = !empty($user['last_failed_login_at']) ? strtotime((string) $user['last_failed_login_at']) : 0;
@@ -134,5 +228,6 @@ final class Authenticator
             ':lu'    => $lockUntil,
             ':id'    => (int) $user['id'],
         ]);
+        return $lockUntil;
     }
 }

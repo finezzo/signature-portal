@@ -24,7 +24,7 @@ final class UserRepository
     public function listAll(): array
     {
         $stmt = $this->pdo->query(
-            'SELECT id, tenant_id, email, name, role, auth_provider, last_login_at, locked_until, created_at
+            'SELECT id, tenant_id, email, name, role, auth_provider, last_login_at, locked_until, mfa_enabled_at, created_at
              FROM users
              ORDER BY (tenant_id IS NULL) DESC, tenant_id ASC, email ASC'
         );
@@ -35,7 +35,7 @@ final class UserRepository
     public function listForTenant(int $tenantId): array
     {
         $stmt = $this->pdo->prepare(
-            'SELECT id, tenant_id, email, name, role, auth_provider, last_login_at, locked_until, created_at
+            'SELECT id, tenant_id, email, name, role, auth_provider, last_login_at, locked_until, mfa_enabled_at, created_at
              FROM users
              WHERE tenant_id = :tid
              ORDER BY email ASC'

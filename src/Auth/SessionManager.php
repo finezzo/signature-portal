@@ -90,7 +90,7 @@ final class SessionManager
         }
     }
 
-    /** @return array{id:int,email:string,name:?string,role:string,tenant_id:?int}|null */
+    /** @return array{id:int,email:string,name:?string,role:string,tenant_id:?int,pw_epoch:string,auth_method?:string}|null */
     public function currentUser(): ?array
     {
         $u = $_SESSION['user'] ?? null;

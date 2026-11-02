@@ -54,6 +54,7 @@ final class AccountController
             'role'          => (string) ($user['role'] ?? ''),
             'auth_provider' => (string) ($user['auth_provider'] ?? 'local'),
             'has_password'  => !empty($user['password_hash']),
+            'mfa_enabled'   => !empty($user['mfa_enabled_at']),
         ];
     }
 

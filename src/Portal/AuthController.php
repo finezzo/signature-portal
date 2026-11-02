@@ -76,6 +76,9 @@ final class AuthController
         }
 
         $result = $this->auth->attempt($email, $pass);
+        if ($result->state === \App\Auth\AuthAttemptResult::STATE_MFA_REQUIRED) {
+            return $response->withHeader('Location', '/portal/login/verify')->withStatus(302);
+        }
         if (!$result->ok()) {
             $this->limiter->hit($ipBucket, self::LOGIN_FAILURE_LIMIT, self::LOGIN_FAILURE_WINDOW);
             // Generic message for every failure path — including lockout —
@@ -97,6 +100,56 @@ final class AuthController
         }
 
         return $response->withHeader('Location', '/portal/dashboard')->withStatus(302);
+    }
+
+    public function showSecondFactor(ServerRequestInterface $request, ResponseInterface $response): ResponseInterface
+    {
+        if ($this->session->isAuthenticated()) {
+            return $response->withHeader('Location', '/portal/dashboard')->withStatus(302);
+        }
+        if (!$this->auth->hasPendingSecondFactor()) {
+            return $response->withHeader('Location', '/portal/login')->withStatus(302);
+        }
+
+        $flash = $this->session->get('flash_login_error');
+        $this->session->forget('flash_login_error');
+
+        return $this->view->render($response, 'portal/login_verify.twig', ['error' => $flash]);
+    }
+
+    public function doSecondFactor(ServerRequestInterface $request, ResponseInterface $response): ResponseInterface
+    {
+        $retry = $response->withHeader('Location', '/portal/login/verify')->withStatus(302);
+        $login = $response->withHeader('Location', '/portal/login')->withStatus(302);
+
+        if (!$this->auth->hasPendingSecondFactor()) {
+            $this->session->set('flash_login_error', 'Your sign-in timed out. Please sign in again.');
+            return $login;
+        }
+
+        $ipBucket = 'loginfail:' . (string) ($request->getServerParams()['REMOTE_ADDR'] ?? 'unknown');
+        if (!$this->limiter->check($ipBucket, self::LOGIN_FAILURE_LIMIT, self::LOGIN_FAILURE_WINDOW)) {
+            $this->session->set('flash_login_error', 'Too many failed sign-ins from your network. Please try again in a few minutes.');
+            return $retry;
+        }
+
+        $result = $this->auth->attemptSecondFactor((string) (((array) $request->getParsedBody())['code'] ?? ''));
+        if ($result->ok()) {
+            if ($result->secondFactor === \App\Auth\MfaService::FACTOR_RECOVERY) {
+                $this->session->flash('success', 'You signed in with a recovery code, which is now used up. If you lost your authenticator, replace it under My account.');
+            }
+            return $response->withHeader('Location', '/portal/dashboard')->withStatus(302);
+        }
+
+        $this->limiter->hit($ipBucket, self::LOGIN_FAILURE_LIMIT, self::LOGIN_FAILURE_WINDOW);
+        // Only someone who knew the password gets here, so unlike on the first
+        // step, naming the reason gives nothing away.
+        if ($result->state === \App\Auth\AuthAttemptResult::STATE_LOCKED) {
+            $this->session->set('flash_login_error', 'Too many wrong codes. Please try again in a few minutes.');
+            return $login;
+        }
+        $this->session->set('flash_login_error', 'That code is not valid.');
+        return $retry;
     }
 
     public function logout(ServerRequestInterface $request, ResponseInterface $response): ResponseInterface

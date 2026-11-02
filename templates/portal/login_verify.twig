@@ -1,0 +1,27 @@
+{% extends "portal/layout.twig" %}
+{% block title %}Two-factor sign-in — SignaturePortal{% endblock %}
+{% block body_class %}auth{% endblock %}
+
+{% block topbar %}{% endblock %}
+
+{% block content %}
+<div class="card login-card">
+    <h1>Enter your code</h1>
+    <p class="muted">Enter the 6-digit code from your authenticator app. If you lost your device, enter one of your recovery codes instead.</p>
+
+    {% if error %}
+    <div class="alert alert-error">{{ error }}</div>
+    {% endif %}
+
+    <form method="post" action="/portal/login/verify" autocomplete="off">
+        <input type="hidden" name="_csrf" value="{{ csrf_token }}">
+
+        <label for="code">Code</label>
+        <input id="code" name="code" type="text" autocomplete="one-time-code" maxlength="32" required autofocus>
+
+        <button type="submit" class="btn btn-primary">Verify</button>
+    </form>
+
+    <p style="margin-top:12px;"><a href="/portal/login" class="muted">Back to sign-in</a></p>
+</div>
+{% endblock %}

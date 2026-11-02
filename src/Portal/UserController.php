@@ -4,6 +4,7 @@ declare(strict_types=1);
 namespace App\Portal;
 
 use App\Audit\AuditLogger;
+use App\Auth\MfaService;
 use App\Auth\PasswordHasher;
 use App\Auth\SessionManager;
 use App\Auth\UserRepository;
@@ -33,6 +34,7 @@ final class UserController
         private readonly PasswordHasher $hasher,
         private readonly SessionManager $session,
         private readonly AuditLogger $audit,
+        private readonly MfaService $mfa,
     ) {}
 
     public function index(ServerRequestInterface $request, ResponseInterface $response): ResponseInterface
@@ -157,6 +159,36 @@ final class UserController
         );
         $this->session->flash('success', 'User unlocked.');
         return $response->withHeader('Location', '/portal/users')->withStatus(302);
+    }
+
+    /** For a user who lost both their authenticator and their recovery codes. */
+    public function resetMfa(ServerRequestInterface $request, ResponseInterface $response, array $args): ResponseInterface
+    {
+        if (($r = $this->requireSuperadmin($request)) !== null) return $r;
+
+        $back = $response->withHeader('Location', '/portal/users')->withStatus(302);
+
+        // Your own second factor can only be removed with your password and a
+        // code, or a stolen session could strip it.
+        $sessionUser = (array) $request->getAttribute('current_user');
+        if ((int) ($sessionUser['id'] ?? 0) === (int) $args['uid']) {
+            $this->session->flash('error', 'Change your own two-factor setup under My account.');
+            return $back;
+        }
+
+        $target = $this->users->find((int) $args['uid']);
+        if ($target === null) return $this->notFound($response);
+
+        $this->mfa->disable((int) $target['id']);
+        $this->audit->record(
+            $target['tenant_id'] !== null ? (int) $target['tenant_id'] : null,
+            'auth.mfa.reset',
+            'user',
+            (int) $target['id'],
+            "Two-factor authentication reset for {$target['email']}",
+        );
+        $this->session->flash('success', 'Two-factor authentication reset. The user sets it up again at the next sign-in.');
+        return $back;
     }
 
     public function delete(ServerRequestInterface $request, ResponseInterface $response, array $args): ResponseInterface

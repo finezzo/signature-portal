@@ -1,0 +1,17 @@
+{% extends "portal/layout.twig" %}
+{% block title %}Recovery codes — SignaturePortal{% endblock %}
+
+{% block content %}
+<h2>Save your recovery codes</h2>
+
+<div class="card" style="max-width:560px;">
+    <div class="alert alert-success">Two-factor authentication is on.</div>
+
+    <p>If you lose your phone, each of these codes gets you in once. <strong>They are shown only now</strong>, so store them in a password manager or print them.</p>
+
+    <pre style="font-size:15px;line-height:1.7;">{% for code in codes %}{{ code }}
+{% endfor %}</pre>
+
+    <a class="btn btn-primary" href="/portal/dashboard">I saved them, continue</a>
+</div>
+{% endblock %}

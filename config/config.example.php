@@ -32,7 +32,9 @@ return [
     'debug' => false,
 
     'auth' => [
-        'local' => ['enabled' => true],
+        // require_mfa: password sign-ins must set up an authenticator app before
+        // they can use the portal. Entra SSO sign-ins are not affected.
+        'local' => ['enabled' => true, 'require_mfa' => true],
         'entra' => ['enabled' => false],
     ],
 

@@ -8,6 +8,7 @@ use App\Portal\AssetController;
 use App\Portal\AuditController;
 use App\Portal\AuthController;
 use App\Portal\DashboardController;
+use App\Portal\MfaController;
 use App\Portal\PasswordResetController;
 use App\Portal\ProfileController;
 use App\Portal\RuleController;
@@ -34,6 +35,8 @@ return static function (App $app): void {
 
     $app->get('/portal/login',  [AuthController::class, 'showLogin']);
     $app->post('/portal/login', [AuthController::class, 'doLogin']);
+    $app->get('/portal/login/verify',  [AuthController::class, 'showSecondFactor']);
+    $app->post('/portal/login/verify', [AuthController::class, 'doSecondFactor']);
 
     // Self-service password reset. Public — the user is locked out by
     // definition. CSRF still applies (global middleware).
@@ -53,6 +56,9 @@ return static function (App $app): void {
 
         $g->get('/account',  [AccountController::class, 'show']);
         $g->post('/account', [AccountController::class, 'update']);
+        $g->get('/account/mfa',          [MfaController::class, 'show']);
+        $g->post('/account/mfa/enable',  [MfaController::class, 'enable']);
+        $g->post('/account/mfa/disable', [MfaController::class, 'disable']);
 
         $g->get('/dashboard', [DashboardController::class, 'index']);
 
@@ -62,6 +68,7 @@ return static function (App $app): void {
         $g->get('/users/{uid:[0-9]+}/edit',     [UserController::class, 'editForm']);
         $g->post('/users/{uid:[0-9]+}',         [UserController::class, 'update']);
         $g->post('/users/{uid:[0-9]+}/unlock',  [UserController::class, 'unlock']);
+        $g->post('/users/{uid:[0-9]+}/mfa-reset', [UserController::class, 'resetMfa']);
         $g->post('/users/{uid:[0-9]+}/delete',  [UserController::class, 'delete']);
 
         $g->get('/tenants',                 [TenantController::class, 'index']);

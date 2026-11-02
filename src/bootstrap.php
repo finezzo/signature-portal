@@ -6,6 +6,7 @@ use App\Addin\SignatureService;
 use App\Audit\AuditLogger;
 use App\Audit\AuditRepository;
 use App\Auth\Authenticator;
+use App\Auth\MfaService;
 use App\Auth\Csrf;
 use App\Auth\EntraProvider;
 use App\Auth\PasswordHasher;
@@ -67,10 +68,16 @@ return (static function (): \Slim\App {
     $container->set(SessionManager::class, fn(Container $c) => new SessionManager($c->get(Config::class)));
     $container->set(PasswordHasher::class, fn() => new PasswordHasher());
     $container->set(Csrf::class, fn(Container $c) => new Csrf($c->get(SessionManager::class)));
+    $container->set(MfaService::class, fn(Container $c) => new MfaService(
+        $c->get(\PDO::class),
+        $c->get(Encryption::class),
+    ));
     $container->set(Authenticator::class, fn(Container $c) => new Authenticator(
         $c->get(\PDO::class),
         $c->get(PasswordHasher::class),
         $c->get(SessionManager::class),
+        $c->get(MfaService::class),
+        $c->get(AuditLogger::class),
     ));
     $container->set(EntraProvider::class, fn(Container $c) => new EntraProvider(
         $c->get(Encryption::class),
@@ -92,6 +99,7 @@ return (static function (): \Slim\App {
     $container->set(AuthMiddleware::class,         fn(Container $c) => new AuthMiddleware(
         $c->get(SessionManager::class),
         $c->get(\PDO::class),
+        (bool) $c->get(Config::class)->get('auth.local.require_mfa', true),
     ));
     $container->set(SecurityHeadersMiddleware::class, fn() => new SecurityHeadersMiddleware());
 
