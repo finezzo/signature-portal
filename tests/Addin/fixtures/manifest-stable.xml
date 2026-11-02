@@ -1,0 +1,258 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<OfficeApp
+    xmlns="http://schemas.microsoft.com/office/appforoffice/1.1"
+    xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+    xmlns:bt="http://schemas.microsoft.com/office/officeappbasictypes/1.0"
+    xsi:type="MailApp">
+  <Id>11111111-2222-4333-8444-555555555555</Id>
+  <Version>1.3.0.0</Version>
+  <ProviderName>SignaturePortal</ProviderName>
+  <DefaultLocale>en-US</DefaultLocale>
+  <DisplayName DefaultValue="Signatures — Acme GmbH">
+    <Override Locale="de-DE" Value="Signaturen — Acme GmbH"/>
+  </DisplayName>
+  <Description DefaultValue="Applies the correct corporate signature on compose.">
+    <Override Locale="de-DE" Value="Fügt beim Verfassen automatisch die richtige Firmensignatur ein."/>
+  </Description>
+  <IconUrl DefaultValue="https://sig.example.com/addin/icon-64.png?v=1.3.0.0"/>
+  <HighResolutionIconUrl DefaultValue="https://sig.example.com/addin/icon-128.png?v=1.3.0.0"/>
+  <SupportUrl DefaultValue="https://sig.example.com/portal"/>
+  <AppDomains>
+    <AppDomain>https://login.microsoftonline.com</AppDomain>
+    <AppDomain>https://graph.microsoft.com</AppDomain>
+  </AppDomains>
+  <Hosts>
+    <Host Name="Mailbox"/>
+  </Hosts>
+  <Requirements>
+    <Sets>
+      <Set Name="Mailbox" MinVersion="1.1"/>
+    </Sets>
+  </Requirements>
+  <FormSettings>
+    <Form xsi:type="ItemEdit">
+      <DesktopSettings>
+        <SourceLocation DefaultValue="https://sig.example.com/addin/taskpane.html?tenant=acme&amp;key=sekret-key&amp;v=1.3.0.0"/>
+      </DesktopSettings>
+    </Form>
+  </FormSettings>
+  <Permissions>ReadWriteMailbox</Permissions>
+  <Rule xsi:type="RuleCollection" Mode="Or">
+    <Rule xsi:type="ItemIs" ItemType="Message" FormType="Edit"/>
+  </Rule>
+  <VersionOverrides xmlns="http://schemas.microsoft.com/office/mailappversionoverrides" xsi:type="VersionOverridesV1_0">
+    <Requirements>
+      <bt:Sets DefaultMinVersion="1.3">
+        <bt:Set Name="Mailbox"/>
+      </bt:Sets>
+    </Requirements>
+    <Hosts>
+      <Host xsi:type="MailHost">
+        <DesktopFormFactor>
+          <FunctionFile resid="Commands.Url"/>
+          <ExtensionPoint xsi:type="MessageComposeCommandSurface">
+            <OfficeTab id="TabDefault">
+              <Group id="sigPortalGroup">
+                <Label resid="groupLabel"/>
+                <Control xsi:type="Button" id="sigPortalChooseBtn">
+                  <Label resid="btnChooseLabel"/>
+                  <Supertip>
+                    <Title resid="btnChooseLabel"/>
+                    <Description resid="btnChooseDesc"/>
+                  </Supertip>
+                  <Icon>
+                    <bt:Image size="16" resid="icon16"/>
+                    <bt:Image size="20" resid="icon20"/>
+                    <bt:Image size="24" resid="icon24"/>
+                    <bt:Image size="32" resid="icon32"/>
+                    <bt:Image size="40" resid="icon40"/>
+                    <bt:Image size="48" resid="icon48"/>
+                    <bt:Image size="64" resid="icon64"/>
+                    <bt:Image size="80" resid="icon80"/>
+                  </Icon>
+                  <Action xsi:type="ShowTaskpane">
+                    <SourceLocation resid="Taskpane.Url"/>
+                  </Action>
+                </Control>
+              </Group>
+            </OfficeTab>
+          </ExtensionPoint>
+        </DesktopFormFactor>
+      </Host>
+    </Hosts>
+    <Resources>
+        <bt:Images>
+          <bt:Image id="icon16" DefaultValue="https://sig.example.com/addin/icon-16.png?v=1.3.0.0"/>
+          <bt:Image id="icon20" DefaultValue="https://sig.example.com/addin/icon-20.png?v=1.3.0.0"/>
+          <bt:Image id="icon24" DefaultValue="https://sig.example.com/addin/icon-24.png?v=1.3.0.0"/>
+          <bt:Image id="icon32" DefaultValue="https://sig.example.com/addin/icon-32.png?v=1.3.0.0"/>
+          <bt:Image id="icon40" DefaultValue="https://sig.example.com/addin/icon-40.png?v=1.3.0.0"/>
+          <bt:Image id="icon48" DefaultValue="https://sig.example.com/addin/icon-48.png?v=1.3.0.0"/>
+          <bt:Image id="icon64" DefaultValue="https://sig.example.com/addin/icon-64.png?v=1.3.0.0"/>
+          <bt:Image id="icon80" DefaultValue="https://sig.example.com/addin/icon-80.png?v=1.3.0.0"/>
+        </bt:Images>
+      <bt:Urls>
+        <bt:Url id="Commands.Url" DefaultValue="https://sig.example.com/addin/commands.html?tenant=acme&amp;key=sekret-key&amp;v=1.3.0.0"/>
+        <bt:Url id="Taskpane.Url" DefaultValue="https://sig.example.com/addin/taskpane.html?tenant=acme&amp;key=sekret-key&amp;v=1.3.0.0"/>
+      </bt:Urls>
+        <bt:ShortStrings>
+          <bt:String id="groupLabel" DefaultValue="Signature">
+            <bt:Override Locale="de-DE" Value="Signatur"/>
+          </bt:String>
+          <bt:String id="btnInsertLabel" DefaultValue="Insert signature">
+            <bt:Override Locale="de-DE" Value="Signatur einfügen"/>
+          </bt:String>
+          <bt:String id="btnChooseLabel" DefaultValue="Choose signature">
+            <bt:Override Locale="de-DE" Value="Signatur auswählen"/>
+          </bt:String>
+        </bt:ShortStrings>
+        <bt:LongStrings>
+          <bt:String id="btnInsertDesc" DefaultValue="Fetch and insert your corporate signature for the current sender.">
+            <bt:Override Locale="de-DE" Value="Ruft die Firmensignatur für den aktuellen Absender ab und fügt sie ein."/>
+          </bt:String>
+          <bt:String id="btnChooseDesc" DefaultValue="Pick one of the approved signature templates and insert it.">
+            <bt:Override Locale="de-DE" Value="Eine freigegebene Signaturvorlage auswählen und einfügen."/>
+          </bt:String>
+        </bt:LongStrings>
+    </Resources>
+    <VersionOverrides xmlns="http://schemas.microsoft.com/office/mailappversionoverrides/1.1" xsi:type="VersionOverridesV1_1">
+      <Requirements>
+        <!-- 1.13 is required by OnMessageFromChanged (per the Microsoft signature
+             sample). Clients below 1.13 (pre-2023 builds) fall back to the
+             VersionOverridesV1_0 manual chooser button above. -->
+        <bt:Sets DefaultMinVersion="1.13">
+          <bt:Set Name="Mailbox"/>
+        </bt:Sets>
+      </Requirements>
+      <Hosts>
+        <Host xsi:type="MailHost">
+          <Runtimes>
+            <Runtime resid="WebViewRuntime.Url">
+              <Override type="javascript" resid="JSRuntime.Url"/>
+            </Runtime>
+          </Runtimes>
+          <DesktopFormFactor>
+            <SupportsSharedFolders>true</SupportsSharedFolders>
+            <FunctionFile resid="Commands.Url"/>
+            <ExtensionPoint xsi:type="LaunchEvent">
+              <LaunchEvents>
+                <LaunchEvent Type="OnNewMessageCompose" FunctionName="onNewMessageComposeHandler"/>
+                <!-- Re-fetch the signature whenever the user changes the FROM
+                     address (e.g. switching to a shared mailbox) — including in
+                     popped-out compose windows, where no new-compose event fires. -->
+                <LaunchEvent Type="OnMessageFromChanged" FunctionName="onMessageFromChangedHandler"/>
+                <!-- Re-fetch when recipients change: rules can be scoped by
+                     recipient (internal/external), so the matching template may
+                     differ once the To/Cc/Bcc fields are filled in. -->
+                <LaunchEvent Type="OnMessageRecipientsChanged" FunctionName="onMessageRecipientsChangedHandler"/>
+              </LaunchEvents>
+              <SourceLocation resid="WebViewRuntime.Url"/>
+            </ExtensionPoint>
+            <!-- Manual controls. V1_1 replaces V1_0 wholesale on Mailbox
+                 1.13+ clients, so the command surface must be repeated here —
+                 otherwise modern Outlook shows no ribbon buttons at all. -->
+            <ExtensionPoint xsi:type="MessageComposeCommandSurface">
+              <OfficeTab id="TabDefault">
+                <Group id="sigPortalGroup11">
+                  <Label resid="groupLabel"/>
+                  <Control xsi:type="Button" id="sigPortalInsertBtn">
+                    <Label resid="btnInsertLabel"/>
+                    <Supertip>
+                      <Title resid="btnInsertLabel"/>
+                      <Description resid="btnInsertDesc"/>
+                    </Supertip>
+                  <Icon>
+                    <bt:Image size="16" resid="icon16"/>
+                    <bt:Image size="20" resid="icon20"/>
+                    <bt:Image size="24" resid="icon24"/>
+                    <bt:Image size="32" resid="icon32"/>
+                    <bt:Image size="40" resid="icon40"/>
+                    <bt:Image size="48" resid="icon48"/>
+                    <bt:Image size="64" resid="icon64"/>
+                    <bt:Image size="80" resid="icon80"/>
+                  </Icon>
+                    <Action xsi:type="ExecuteFunction">
+                      <FunctionName>insertSignatureManual</FunctionName>
+                    </Action>
+                  </Control>
+                  <Control xsi:type="Button" id="sigPortalChooseBtn11">
+                    <Label resid="btnChooseLabel"/>
+                    <Supertip>
+                      <Title resid="btnChooseLabel"/>
+                      <Description resid="btnChooseDesc"/>
+                    </Supertip>
+                  <Icon>
+                    <bt:Image size="16" resid="icon16"/>
+                    <bt:Image size="20" resid="icon20"/>
+                    <bt:Image size="24" resid="icon24"/>
+                    <bt:Image size="32" resid="icon32"/>
+                    <bt:Image size="40" resid="icon40"/>
+                    <bt:Image size="48" resid="icon48"/>
+                    <bt:Image size="64" resid="icon64"/>
+                    <bt:Image size="80" resid="icon80"/>
+                  </Icon>
+                    <Action xsi:type="ShowTaskpane">
+                      <SourceLocation resid="Taskpane.Url"/>
+                    </Action>
+                  </Control>
+                </Group>
+              </OfficeTab>
+            </ExtensionPoint>
+          </DesktopFormFactor>
+          <!-- Outlook mobile (iOS/Android). Event-based signatures work there
+               for Exchange Online accounts; MobileFormFactor cannot host
+               ribbon buttons, so manual insertion is desktop/web only.
+               Shared-mailbox FROM switching is not supported on mobile, so
+               the recipients event is omitted to mirror Microsoft's
+               signature sample. -->
+          <MobileFormFactor>
+            <ExtensionPoint xsi:type="LaunchEvent">
+              <LaunchEvents>
+                <LaunchEvent Type="OnNewMessageCompose" FunctionName="onNewMessageComposeHandler"/>
+                <LaunchEvent Type="OnMessageFromChanged" FunctionName="onMessageFromChangedHandler"/>
+              </LaunchEvents>
+              <SourceLocation resid="WebViewRuntime.Url"/>
+            </ExtensionPoint>
+          </MobileFormFactor>
+        </Host>
+      </Hosts>
+      <Resources>
+        <bt:Images>
+          <bt:Image id="icon16" DefaultValue="https://sig.example.com/addin/icon-16.png?v=1.3.0.0"/>
+          <bt:Image id="icon20" DefaultValue="https://sig.example.com/addin/icon-20.png?v=1.3.0.0"/>
+          <bt:Image id="icon24" DefaultValue="https://sig.example.com/addin/icon-24.png?v=1.3.0.0"/>
+          <bt:Image id="icon32" DefaultValue="https://sig.example.com/addin/icon-32.png?v=1.3.0.0"/>
+          <bt:Image id="icon40" DefaultValue="https://sig.example.com/addin/icon-40.png?v=1.3.0.0"/>
+          <bt:Image id="icon48" DefaultValue="https://sig.example.com/addin/icon-48.png?v=1.3.0.0"/>
+          <bt:Image id="icon64" DefaultValue="https://sig.example.com/addin/icon-64.png?v=1.3.0.0"/>
+          <bt:Image id="icon80" DefaultValue="https://sig.example.com/addin/icon-80.png?v=1.3.0.0"/>
+        </bt:Images>
+        <bt:Urls>
+          <bt:Url id="Commands.Url"       DefaultValue="https://sig.example.com/addin/commands.html?tenant=acme&amp;key=sekret-key&amp;v=1.3.0.0"/>
+          <bt:Url id="Taskpane.Url"       DefaultValue="https://sig.example.com/addin/taskpane.html?tenant=acme&amp;key=sekret-key&amp;v=1.3.0.0"/>
+          <bt:Url id="WebViewRuntime.Url" DefaultValue="https://sig.example.com/addin/commands.html?tenant=acme&amp;key=sekret-key&amp;v=1.3.0.0"/>
+          <bt:Url id="JSRuntime.Url"      DefaultValue="https://sig.example.com/addin/commands.js?tenant=acme&amp;key=sekret-key&amp;v=1.3.0.0"/>
+        </bt:Urls>
+        <bt:ShortStrings>
+          <bt:String id="groupLabel" DefaultValue="Signature">
+            <bt:Override Locale="de-DE" Value="Signatur"/>
+          </bt:String>
+          <bt:String id="btnInsertLabel" DefaultValue="Insert signature">
+            <bt:Override Locale="de-DE" Value="Signatur einfügen"/>
+          </bt:String>
+          <bt:String id="btnChooseLabel" DefaultValue="Choose signature">
+            <bt:Override Locale="de-DE" Value="Signatur auswählen"/>
+          </bt:String>
+        </bt:ShortStrings>
+        <bt:LongStrings>
+          <bt:String id="btnInsertDesc" DefaultValue="Fetch and insert your corporate signature for the current sender.">
+            <bt:Override Locale="de-DE" Value="Ruft die Firmensignatur für den aktuellen Absender ab und fügt sie ein."/>
+          </bt:String>
+          <bt:String id="btnChooseDesc" DefaultValue="Pick one of the approved signature templates and insert it.">
+            <bt:Override Locale="de-DE" Value="Eine freigegebene Signaturvorlage auswählen und einfügen."/>
+          </bt:String>
+        </bt:LongStrings>
+      </Resources>
+    </VersionOverrides>
+  </VersionOverrides>
+</OfficeApp>

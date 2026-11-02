@@ -51,6 +51,28 @@
                     ribbon buttons. If your users don't see them, re-download the manifest here and
                     re-upload it in the M365 admin centre.
                 </p>
+
+                <h2 style="margin-top:32px;">Test add-in changes before rollout</h2>
+                <p class="muted" style="font-size:13px;">
+                    These manifests install as separate add-ins next to the one above. Sideload them or
+                    assign them to a pilot group; nobody else is affected. Files in
+                    <code>public/addin-preview/</code> only reach people who have one of them installed.
+                </p>
+                <a class="btn" href="/portal/tenants/{{ tenant.id }}/manifest.xml?channel=preview">Preview manifest</a>
+                <a class="btn" href="/portal/tenants/{{ tenant.id }}/manifest.xml?channel=local">Local dev manifest</a>
+
+                <form method="post" action="/portal/tenants/{{ tenant.id }}/addin-testers" style="margin-top:16px;">
+                    <input type="hidden" name="_csrf" value="{{ csrf_token }}">
+                    <label for="addin_testers">Testers (one address per line)</label>
+                    <textarea id="addin_testers" name="addin_testers" rows="3">{{ tenant.addinTesters|join("\n") }}</textarea>
+                    <p class="muted" style="font-size:13px;">
+                        Outlook runs every installed add-in on compose in no fixed order. For the addresses
+                        listed here the regular add-in inserts nothing automatically, so the signature on
+                        screen always comes from the test build. Remove an address and regular behaviour
+                        returns on the next compose.
+                    </p>
+                    <button type="submit" class="btn">Save testers</button>
+                </form>
             {% else %}
                 <p class="muted">Generate an API key first.</p>
             {% endif %}

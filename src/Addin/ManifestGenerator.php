@@ -30,9 +30,17 @@ use App\Tenant\Tenant;
  * labels automatically when its display language is German.
  *
  * Tenant slug + API key are baked into the WebView, JS runtime and taskpane
- * URLs so the add-in code reads them from `location.search` at load time
- * without a separate config fetch. The API key is a secret — distribute the
- * manifest only via M365 admin upload or trusted sideloading.
+ * URLs so the add-in code reads them from the URL at load time without a
+ * separate config fetch. The API key is a secret — distribute the manifest only
+ * via M365 admin upload or trusted sideloading.
+ *
+ * Output for AddinChannel::Stable is frozen (tests/Addin/fixtures): any change
+ * to an admin-deployed manifest blocks users until an admin consents to it.
+ * Preview and Local carry what Stable should adopt once it has proven itself:
+ *   - the API key in the URL fragment, which is never sent to the server and so
+ *     stays out of access logs, where the query string would land;
+ *   - ReadWriteItem, the minimum that setSignatureAsync needs. ReadWriteMailbox
+ *     would hand a compromised add-in file every mailbox it runs in.
  */
 final class ManifestGenerator
 {
@@ -45,34 +53,50 @@ final class ManifestGenerator
      */
     private const VERSION = '1.3.0.0';
 
+    /** Version of the Preview and Local manifests. Bump to refresh their caches. */
+    private const PREVIEW_VERSION = '1.4.0.0';
+
+    /** Where tools/addin-dev/server.py listens. */
+    private const LOCAL_BASE_URL = 'https://localhost:8443';
+
     public function __construct(private readonly string $baseUrl) {}
 
-    public function build(Tenant $tenant, string $apiKeyPlaintext): string
+    public function build(Tenant $tenant, string $apiKeyPlaintext, AddinChannel $channel = AddinChannel::Stable): string
     {
-        $base          = rtrim($this->baseUrl, '/');
-        $guid          = $tenant->manifestGuid ?? '00000000-0000-4000-8000-000000000000';
-        $displayName   = "Signatures — {$tenant->name}";
-        $displayNameDe = "Signaturen — {$tenant->name}";
+        $stable        = $channel === AddinChannel::Stable;
+        $portal        = rtrim($this->baseUrl, '/');
+        $base          = $channel === AddinChannel::Local ? self::LOCAL_BASE_URL : $portal;
+        $guid          = $channel->manifestGuid($tenant->manifestGuid ?? '00000000-0000-4000-8000-000000000000');
+        $displayName   = "Signatures — {$tenant->name}{$channel->nameSuffix()}";
+        $displayNameDe = "Signaturen — {$tenant->name}{$channel->nameSuffix()}";
         $description   = 'Applies the correct corporate signature on compose.';
         $descriptionDe = 'Fügt beim Verfassen automatisch die richtige Firmensignatur ein.';
-        $version       = self::VERSION;
+        $version       = $stable ? self::VERSION : self::PREVIEW_VERSION;
+        $permissions   = $stable ? 'ReadWriteMailbox' : 'ReadWriteItem';
+        $dir           = $channel->directory();
 
-        $query       = '?tenant=' . rawurlencode($tenant->slug)
-                     . '&key='    . rawurlencode($apiKeyPlaintext)
-                     . '&v='      . rawurlencode(self::VERSION);
+        // `channel` tells /api/sig which add-in is calling, see SignatureService.
+        $params      = $stable
+            ? '?tenant=' . rawurlencode($tenant->slug)
+              . '&key='  . rawurlencode($apiKeyPlaintext)
+              . '&v='    . rawurlencode($version)
+            : '?tenant='   . rawurlencode($tenant->slug)
+              . '&v='      . rawurlencode($version)
+              . '&channel=preview'
+              . '#key='    . rawurlencode($apiKeyPlaintext);
 
-        $cmdsUrl     = "{$base}/addin/commands.html{$query}";
-        $jsUrl       = "{$base}/addin/commands.js{$query}";
+        $cmdsUrl     = "{$base}/{$dir}/commands.html{$params}";
+        $jsUrl       = "{$base}/{$dir}/commands.js{$params}";
         // The taskpane needs tenant + key too — it lists and renders templates
         // via the key-authenticated API. Same exposure as commands.html above.
-        $taskpaneUrl = "{$base}/addin/taskpane.html{$query}";
+        $taskpaneUrl = "{$base}/{$dir}/taskpane.html{$params}";
 
         // One exact-size PNG per resolution (Microsoft: 16/32/80 required for
         // ribbon buttons, 20/24/40/48/64 recommended for high-DPI; 64 for
         // IconUrl, 128 for HighResolutionIconUrl). The `v=` buster matters
         // here too: icon URLs are otherwise cached across manifest updates.
         $icon = static fn(int $size): string =>
-            "{$base}/addin/icon-{$size}.png?v=" . rawurlencode(self::VERSION);
+            "{$base}/addin/icon-{$size}.png?v=" . rawurlencode($version);
         $icon16  = $icon(16);
         $icon20  = $icon(20);
         $icon24  = $icon(24);
@@ -154,7 +178,7 @@ XML;
   </Description>
   <IconUrl DefaultValue="{$e($icon64)}"/>
   <HighResolutionIconUrl DefaultValue="{$e($icon128)}"/>
-  <SupportUrl DefaultValue="{$e($base)}/portal"/>
+  <SupportUrl DefaultValue="{$e($portal)}/portal"/>
   <AppDomains>
     <AppDomain>https://login.microsoftonline.com</AppDomain>
     <AppDomain>https://graph.microsoft.com</AppDomain>
@@ -174,7 +198,7 @@ XML;
       </DesktopSettings>
     </Form>
   </FormSettings>
-  <Permissions>ReadWriteMailbox</Permissions>
+  <Permissions>{$e($permissions)}</Permissions>
   <Rule xsi:type="RuleCollection" Mode="Or">
     <Rule xsi:type="ItemIs" ItemType="Message" FormType="Edit"/>
   </Rule>

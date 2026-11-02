@@ -3,6 +3,7 @@ declare(strict_types=1);
 
 namespace App\Portal;
 
+use App\Addin\AddinChannel;
 use App\Addin\ManifestGenerator;
 use App\Audit\AuditLogger;
 use App\Auth\EntraProvider;
@@ -266,7 +267,11 @@ final class TenantController
             return $response->withHeader('Location', "/portal/tenants/{$tenant->id}")->withStatus(302);
         }
 
-        $xml = $this->manifest->build($tenant, $apiKey);
+        $channel = AddinChannel::fromQuery((string) ($request->getQueryParams()['channel'] ?? ''));
+        $xml     = $this->manifest->build($tenant, $apiKey, $channel);
+
+        // Every manifest discloses the API key, so the download is worth a trace.
+        $this->audit->record($tenant->id, 'tenant.manifest.downloaded', 'tenant', $tenant->id, "Manifest downloaded ({$channel->value})");
 
         $body = new Stream(fopen('php://temp', 'r+'));
         $body->write($xml);
@@ -274,8 +279,41 @@ final class TenantController
 
         return $response
             ->withHeader('Content-Type', 'application/xml; charset=UTF-8')
-            ->withHeader('Content-Disposition', 'attachment; filename="manifest-' . $tenant->slug . '.xml"')
+            ->withHeader('Content-Disposition', 'attachment; filename="manifest-' . $tenant->slug
+                . ($channel === AddinChannel::Stable ? '' : '-' . $channel->value) . '.xml"')
             ->withBody($body);
+    }
+
+    /** Who gets their signature from a preview add-in only, see SignatureService. */
+    public function saveAddinTesters(ServerRequestInterface $request, ResponseInterface $response, array $args): ResponseInterface
+    {
+        $tenant = $this->loadTenantForAdminOr403($args, $request);
+        if ($tenant instanceof ResponseInterface) return $tenant;
+
+        $back = $response->withHeader('Location', "/portal/tenants/{$tenant->id}")->withStatus(302);
+        $body = (array) $request->getParsedBody();
+
+        $emails = [];
+        foreach (preg_split('/[\s,;]+/', (string) ($body['addin_testers'] ?? '')) ?: [] as $part) {
+            $email = mb_strtolower(trim($part));
+            if ($email === '') continue;
+            if (!filter_var($email, FILTER_VALIDATE_EMAIL)) {
+                $this->session->flash('error', "Not a valid email address: {$email}");
+                return $back;
+            }
+            $emails[] = $email;
+        }
+
+        try {
+            $this->tenants->setAddinTesters($tenant->id, array_values(array_unique($emails)));
+        } catch (\PDOException) {
+            $this->session->flash('error', 'Could not save the testers. Has migration 019_addin_testers.sql been applied?');
+            return $back;
+        }
+
+        $this->audit->record($tenant->id, 'tenant.addin_testers.updated', 'tenant', $tenant->id, 'Add-in testers saved (' . count($emails) . ')');
+        $this->session->flash('success', 'Add-in testers saved.');
+        return $back;
     }
 
     // ---------- helpers ----------

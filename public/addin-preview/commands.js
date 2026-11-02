@@ -1,0 +1,308 @@
+/**
+ * SignaturePortal — Outlook Add-in handler.
+ *
+ * Registered as functions for the LaunchEvents declared in the manifest:
+ *   - OnNewMessageCompose        (Mailbox 1.10+) — initial signature on compose
+ *   - OnMessageFromChanged       (Mailbox 1.13+) — re-fetch when the FROM
+ *     address changes (shared-mailbox switch), incl. popped-out windows
+ *   - OnMessageRecipientsChanged (Mailbox 1.11+) — re-fetch when To/Cc/Bcc
+ *     change, because rules can be scoped by recipient
+ *   - insertSignatureManual      — ribbon button (ExecuteFunction): re-runs
+ *     the same pipeline on demand, with visible notification-bar feedback
+ *
+ * The manifest embeds the tenant slug in this file's query string and the API
+ * key in its URL fragment (<bt:Url id="Commands.Url" .../>). A fragment is never
+ * sent to the server, so the key stays out of access logs. Manifests older than
+ * 1.4 carry the key in the query string, which keeps working.
+ *
+ * Outlook expects the handler to call event.completed() within ~30s,
+ * otherwise it shows a "couldn't run the add-in" prompt to the user.
+ */
+(function () {
+    "use strict";
+
+    var BASE_URL = (function () {
+        // The portal base URL is just our origin — same host the manifest
+        // points at. Avoids hardcoding it twice.
+        var loc = location;
+        return loc.protocol + "//" + loc.host;
+    })();
+
+    function parseParams(raw) {
+        var p = {};
+        raw.split("&").forEach(function (pair) {
+            if (!pair) return;
+            var i = pair.indexOf("=");
+            try {
+                p[decodeURIComponent(i === -1 ? pair : pair.slice(0, i))] =
+                    i === -1 ? "" : decodeURIComponent(pair.slice(i + 1));
+            } catch (_e) { /* malformed pair (Office adds its own) — skip it */ }
+        });
+        return p;
+    }
+
+    var QUERY = parseParams(location.search.replace(/^\?/, ""));
+    var FRAGMENT = parseParams(location.hash.replace(/^#/, ""));
+
+    var TENANT = QUERY.tenant || "";
+    var API_KEY = FRAGMENT.key || QUERY.key || "";
+    // Set by Preview and Local manifests only, so that promoting this file to
+    // stable changes nothing about how the stable manifest identifies itself.
+    var CHANNEL = QUERY.channel || "";
+
+    // UI strings for the manual insert button, keyed by language. The
+    // automatic handlers stay silent by design; only the manual path talks
+    // to the user. Language follows Outlook's display language
+    // (Office.context.displayLanguage, available once Office is ready).
+    var STRINGS = {
+        en: {
+            fetching:      "Fetching your signature…",
+            inserted:      "Signature inserted.",
+            noMatch:       "No signature rule matches this message.",
+            insertFailed:  "Could not insert the signature into the message.",
+            unreachable:   "Signature service unreachable. Try again shortly.",
+            misconfigured: "Signature add-in is misconfigured — please re-install it."
+        },
+        de: {
+            fetching:      "Signatur wird abgerufen…",
+            inserted:      "Signatur eingefügt.",
+            noMatch:       "Keine Signaturregel passt zu dieser Nachricht.",
+            insertFailed:  "Die Signatur konnte nicht eingefügt werden.",
+            unreachable:   "Signaturdienst nicht erreichbar. Bitte später erneut versuchen.",
+            misconfigured: "Signatur-Add-in ist falsch konfiguriert — bitte neu installieren."
+        }
+    };
+
+    function t(key) {
+        var lang = "en";
+        try {
+            var dl = (Office.context && Office.context.displayLanguage) || "";
+            if (/^de/i.test(dl)) lang = "de";
+        } catch (_e) { /* keep English */ }
+        return (STRINGS[lang] && STRINGS[lang][key]) || STRINGS.en[key] || key;
+    }
+
+    function onNewMessageComposeHandler(event) { runWithSignature(event, false); }
+    function onMessageFromChangedHandler(event) { runWithSignature(event, false); }
+    function onMessageRecipientsChangedHandler(event) { runWithSignature(event, true); }
+
+    function associateHandlers() {
+        if (typeof Office === "undefined" || !Office.actions || !Office.actions.associate) {
+            return;
+        }
+        Office.actions.associate("onNewMessageComposeHandler", onNewMessageComposeHandler);
+        Office.actions.associate("onMessageFromChangedHandler", onMessageFromChangedHandler);
+        Office.actions.associate("onMessageRecipientsChangedHandler", onMessageRecipientsChangedHandler);
+        Office.actions.associate("insertSignatureManual", insertSignatureManual);
+    }
+
+    // Register handlers BOTH immediately and in Office.onReady():
+    //  - Classic Outlook on Windows runs launch-event handlers without ever
+    //    executing Office.onReady(), so top-level registration is required
+    //    there (documented in Microsoft's event-based activation guide).
+    //  - In the browser runtime (Mac, web, new Windows) Office.actions may not
+    //    be initialized yet while this file is being parsed; registering only
+    //    at top level then silently does nothing. Re-associating in onReady
+    //    covers that case (and was the previously working behavior on Mac).
+    //  Associating the same name twice is harmless — the mapping is identical.
+    associateHandlers();
+    if (typeof Office !== "undefined" && typeof Office.onReady === "function") {
+        Office.onReady(function () { associateHandlers(); });
+    }
+
+    // Last context we fetched a signature for, e.g. "from@x|a@y,b@z". The
+    // recipients event fires on every To/Cc/Bcc edit; when the runtime stays
+    // alive between events (browser runtime keeps it for the compose session)
+    // this skips fetches whose outcome cannot differ. In the short-lived
+    // classic-Windows runtime the variable resets per event — worst case is
+    // one extra fetch, never a missing one.
+    var lastContextKey = null;
+
+    function runWithSignature(event, skipIfUnchanged) {
+        if (!TENANT || !API_KEY) {
+            // Manifest is malformed / not regenerated after a key rotation.
+            // Fail open (do nothing) rather than block the user.
+            return event.completed();
+        }
+        try {
+            collectContext(function (ctx) {
+                var key = ctx.fromEmail + "|" + ctx.recipients.join(",");
+                if (skipIfUnchanged && key === lastContextKey) {
+                    return event.completed();
+                }
+                lastContextKey = key;
+                fetchSignature(ctx, function (html, isShared) {
+                    if (!html) {
+                        // 204 no-match — leave whatever signature is already
+                        // in the body alone. We never wipe an existing sig.
+                        return event.completed();
+                    }
+                    Office.context.mailbox.item.body.setSignatureAsync(
+                        html,
+                        { coercionType: Office.CoercionType.Html },
+                        function () { event.completed(); }
+                    );
+                }, function (_err) {
+                    // Network or 5xx — fail closed silently. The user can
+                    // resend after the portal recovers; we don't block.
+                    event.completed();
+                });
+            });
+        } catch (_e) {
+            event.completed();
+        }
+    }
+
+    // ---- Manual "Insert signature" ribbon button (ExecuteFunction) --------
+    //
+    // Same fetch pipeline as the automatic handlers, but:
+    //   - never skipped by the lastContextKey dedupe (the user explicitly
+    //     asked, so we always re-fetch), and
+    //   - every outcome is surfaced in the notification bar instead of
+    //     failing silently. Outlook caps notification messages at 150 chars
+    //     and requires an icon resid for informationalMessage.
+    var NOTIF_KEY = "sigPortalStatus";
+
+    function notify(type, message) {
+        try {
+            var msg = { type: type, message: String(message).slice(0, 150) };
+            if (type === "informationalMessage") {
+                msg.icon = "icon16";
+                msg.persistent = false;
+            }
+            Office.context.mailbox.item.notificationMessages.replaceAsync(NOTIF_KEY, msg, function () {});
+        } catch (_e) { /* notifications unavailable — insertion still works */ }
+    }
+
+    function insertSignatureManual(event) {
+        if (!TENANT || !API_KEY) {
+            notify("errorMessage", t("misconfigured"));
+            return event.completed();
+        }
+        try {
+            notify("progressIndicator", t("fetching"));
+            collectContext(function (ctx) {
+                lastContextKey = ctx.fromEmail + "|" + ctx.recipients.join(",");
+                fetchSignature(ctx, function (html) {
+                    if (!html) {
+                        notify("informationalMessage", t("noMatch"));
+                        return event.completed();
+                    }
+                    Office.context.mailbox.item.body.setSignatureAsync(
+                        html,
+                        { coercionType: Office.CoercionType.Html },
+                        function (res) {
+                            if (res && res.status === Office.AsyncResultStatus.Succeeded) {
+                                notify("informationalMessage", t("inserted"));
+                            } else {
+                                notify("errorMessage", t("insertFailed"));
+                            }
+                            event.completed();
+                        }
+                    );
+                }, function (_err) {
+                    notify("errorMessage", t("unreachable"));
+                    event.completed();
+                });
+            });
+        } catch (_e) {
+            notify("errorMessage", t("unreachable"));
+            event.completed();
+        }
+    }
+
+    function collectContext(cb) {
+        var item = Office.context.mailbox.item;
+        var primary = (Office.context.mailbox.userProfile &&
+                       Office.context.mailbox.userProfile.emailAddress) || "";
+
+        getFromAddress(item, function (fromEmail) {
+            getRecipients(item, function (recipients) {
+                cb({
+                    fromEmail:  fromEmail || primary,
+                    primary:    primary,
+                    recipients: recipients
+                });
+            });
+        });
+    }
+
+    function getFromAddress(item, cb) {
+        // item.from is on Compose forms; getAsync is the documented path.
+        if (!item.from || typeof item.from.getAsync !== "function") {
+            return cb("");
+        }
+        item.from.getAsync(function (res) {
+            if (res.status !== Office.AsyncResultStatus.Succeeded || !res.value) {
+                return cb("");
+            }
+            cb(res.value.emailAddress || "");
+        });
+    }
+
+    function getRecipients(item, cb) {
+        var collected = [];
+        var pending = 0;
+        var done = function () {
+            if (--pending === 0) cb(collected);
+        };
+        var add = function (recips) {
+            (recips || []).forEach(function (r) {
+                if (r && r.emailAddress) collected.push(r.emailAddress);
+            });
+        };
+
+        ["to", "cc", "bcc"].forEach(function (field) {
+            if (item[field] && typeof item[field].getAsync === "function") {
+                pending++;
+                item[field].getAsync(function (res) {
+                    if (res.status === Office.AsyncResultStatus.Succeeded) {
+                        add(res.value);
+                    }
+                    done();
+                });
+            }
+        });
+
+        if (pending === 0) cb([]);
+    }
+
+    // "a@x.de, b@x.de, c@y.com" → "@x.de,@y.com". The rule engine only asks
+    // whether a recipient is internal or external; the domain answers that.
+    function recipientDomains(recipients) {
+        var seen = {};
+        return recipients.map(function (r) {
+            return r.slice(r.lastIndexOf("@")).toLowerCase();
+        }).filter(function (d) {
+            if (d.charAt(0) !== "@" || seen[d]) return false;
+            seen[d] = true;
+            return true;
+        }).join(",");
+    }
+
+    function fetchSignature(ctx, ok, fail) {
+        var url = BASE_URL + "/api/sig?tenant=" + encodeURIComponent(TENANT)
+            + (CHANNEL ? "&channel=" + encodeURIComponent(CHANNEL) : "");
+
+        var xhr = new XMLHttpRequest();
+        xhr.open("GET", url, true);
+        xhr.setRequestHeader("X-Sig-Key", API_KEY);
+        // Who mails whom is personal data: headers, because query strings land
+        // in the web server's access log.
+        xhr.setRequestHeader("X-Sig-Email", encodeURIComponent(ctx.fromEmail));
+        xhr.setRequestHeader("X-Sig-Primary", encodeURIComponent(ctx.primary));
+        xhr.setRequestHeader("X-Sig-Recipients", encodeURIComponent(recipientDomains(ctx.recipients)));
+        xhr.setRequestHeader("Accept", "text/html");
+        xhr.timeout = 8000;
+        xhr.onload = function () {
+            if (xhr.status === 204) return ok("", false);
+            if (xhr.status === 200) {
+                var shared = (xhr.getResponseHeader("X-Sig-Shared") || "").toLowerCase() === "true";
+                return ok(xhr.responseText, shared);
+            }
+            return fail(new Error("HTTP " + xhr.status));
+        };
+        xhr.onerror = xhr.ontimeout = function () { fail(new Error("network")); };
+        xhr.send();
+    }
+})();

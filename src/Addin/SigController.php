@@ -16,7 +16,10 @@ use Psr\Http\Message\ServerRequestInterface;
  *     &email=<from>            (required — the FROM address; may be shared)
  *     &primary=<primary>       (the user's primary mailbox; used as fallback
  *                               when FROM has no Entra profile)
- *     &recipients=<csv>        (optional — to/cc/bcc, comma-separated)
+ *     &recipients=<csv>        (optional — to/cc/bcc, comma-separated; the
+ *                               domain alone ("@example.com") is enough)
+ *     &channel=preview         (optional — sent by preview/local add-ins, see
+ *                               Tenant::isAddinTester())
  *     &language=<bcp47>        (optional — overrides Graph preferredLanguage)
  *     &mailbox_type=shared|personal  (optional override; otherwise auto)
  *     &template_id=<id>        (optional — manual pick from the taskpane;
@@ -28,6 +31,12 @@ use Psr\Http\Message\ServerRequestInterface;
  *     templates an admin has opted into the "Choose signature" pane.
  *
  *   Auth: X-Sig-Key: <key>  (header only — no query-string fallback)
+ *
+ *   email, primary and recipients may instead arrive percent-encoded in the
+ *   X-Sig-Email, X-Sig-Primary and X-Sig-Recipients headers, which win over the
+ *   query string. Query strings land in Apache access logs, and these values
+ *   are personal data (who mails whom). The query form stays for add-ins that
+ *   are already installed.
  *
  *   Responses:
  *     200 text/html with X-Sig-Shared: true|false  — render this signature
@@ -68,12 +77,13 @@ final class SigController
         $req = new SignatureRequest(
             tenantSlug:   mb_strtolower(trim((string) ($q['tenant'] ?? ''))),
             apiKey:       $key,
-            fromEmail:    mb_strtolower(trim((string) ($q['email']   ?? ''))),
-            primaryEmail: mb_strtolower(trim((string) ($q['primary'] ?? ''))),
-            recipients:   $this->parseRecipients((string) ($q['recipients'] ?? '')),
+            fromEmail:    mb_strtolower(trim($this->composeValue($request, 'X-Sig-Email', 'email'))),
+            primaryEmail: mb_strtolower(trim($this->composeValue($request, 'X-Sig-Primary', 'primary'))),
+            recipients:   $this->parseRecipients($this->composeValue($request, 'X-Sig-Recipients', 'recipients')),
             language:     $this->nullIfEmpty((string) ($q['language'] ?? '')),
             mailboxType:  $this->validateMailboxType((string) ($q['mailbox_type'] ?? '')),
             templateId:   ($tid = (int) ($q['template_id'] ?? 0)) > 0 ? $tid : null,
+            previewChannel: ($q['channel'] ?? '') === 'preview',
         );
 
         // Minimal validation — return 400 for malformed input rather than
@@ -172,6 +182,15 @@ final class SigController
             ->withStatus(429)
             ->withHeader('Retry-After', '60')
             ->withHeader('Content-Type', 'text/plain');
+    }
+
+    /** Compose context from its header if present, else from the query string. */
+    private function composeValue(ServerRequestInterface $request, string $header, string $queryKey): string
+    {
+        $fromHeader = $request->getHeaderLine($header);
+        return $fromHeader !== ''
+            ? rawurldecode($fromHeader)
+            : (string) ($request->getQueryParams()[$queryKey] ?? '');
     }
 
     /** @return list<string> */

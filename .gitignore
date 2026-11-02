@@ -45,6 +45,7 @@
 
 # IDE / OS
 .DS_Store
+__pycache__/
 .idea/
 .vscode/
 *.swp

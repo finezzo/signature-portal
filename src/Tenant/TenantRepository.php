@@ -120,6 +120,15 @@ final class TenantRepository
             ->execute([':id' => $id]);
     }
 
+    /** @param list<string> $emails */
+    public function setAddinTesters(int $id, array $emails): void
+    {
+        $this->pdo->prepare('UPDATE tenants SET addin_testers = :testers WHERE id = :id')->execute([
+            ':id'      => $id,
+            ':testers' => $emails === [] ? null : json_encode(array_values($emails), JSON_THROW_ON_ERROR),
+        ]);
+    }
+
     public function delete(int $id): void
     {
         $this->pdo->prepare('DELETE FROM tenants WHERE id = :id')->execute([':id' => $id]);

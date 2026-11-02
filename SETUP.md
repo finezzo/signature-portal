@@ -388,7 +388,50 @@ The manifest structure follows Microsoft's recommended event-based add-in shape:
 - **VersionOverrides V1_0** (Mailbox 1.3+): a manual "Choose signature" ribbon button that opens the taskpane (fallback for pre-2023 clients).
 - **VersionOverrides V1_1** (Mailbox 1.13+): the `<Runtimes>` block (WebView + JS override — needed for classic Outlook for Windows), `SupportsSharedFolders: true`, LaunchEvents (`OnNewMessageCompose`, `OnMessageFromChanged`, `OnMessageRecipientsChanged`), **and** a `MessageComposeCommandSurface` with the two manual ribbon buttons below. V1_1 fully replaces V1_0 on clients that support it, which is why the command surface is declared in both blocks.
 
-Permissions: `ReadWriteMailbox` (needed for `setSignatureAsync`).
+Permissions: `ReadWriteMailbox` on the stable channel. `setSignatureAsync` itself only needs `ReadWriteItem`, which the preview channel already uses (see below).
+
+### Testing add-in changes before rollout
+
+`public/addin/` is what every user runs: a file uploaded there is live on their next compose. So changes never start there. The add-in has three channels, and to Outlook each one is a separate add-in with its own manifest id:
+
+| Channel | Files | Who runs it | How it gets there |
+| --- | --- | --- | --- |
+| **Local** | `public/addin-preview/`, on your machine | only you | `tools/addin-dev/server.py` + *Local dev manifest* |
+| **Preview** | `public/addin-preview/`, on the server | whoever has the preview manifest | upload the folder + *Preview manifest* |
+| **Stable** | `public/addin/`, on the server | everyone | `bin/addin-promote.php`, then upload |
+
+The manifests are on the tenant overview page, under *Test add-in changes before rollout*.
+
+**First-time setup (macOS).** Outlook only loads add-ins over HTTPS with a certificate it trusts:
+
+```
+tools/addin-dev/setup-cert.sh
+```
+
+**The workflow:**
+
+1. Edit `public/addin-preview/`, never `public/addin/`.
+2. Start the local server. It serves your files from disk and forwards `/api/*` to the portal, so you test against real rules and templates without a local database:
+   ```
+   python3 tools/addin-dev/server.py --upstream https://signatures.example.com
+   ```
+3. For quick logic checks, open `https://localhost:8443/__harness`. It runs the real `commands.js` against a simulated Outlook. No sideloading and no Outlook caches, but it says nothing about real clients and doesn't cover the taskpane.
+4. Add your address under *Testers* on the tenant page, then sideload the *Local dev manifest*: open <https://aka.ms/olksideload>, then *My add-ins → Custom Addins → Add a custom add-in → Add from File*. Saved files are live on your next compose. In Chrome, allow the local network access prompt when Outlook on the web first loads the add-in from localhost.
+5. For other clients or pilot users (mobile can't reach your localhost), upload `public/addin-preview/` and either sideload the *Preview manifest* or assign it to a pilot group under *Integrated apps*. Add pilot users to *Testers* too.
+6. When it holds up, promote it. This only copies files; nothing reaches users until you upload:
+   ```
+   php bin/addin-promote.php         # shows what would change
+   php bin/addin-promote.php --yes
+   ```
+   Then upload `public/addin/`. To roll back: `git checkout <commit> -- public/addin` and upload again.
+
+**Why the tester list.** Outlook starts every installed add-in on the same event in no fixed order, so a test build next to the regular add-in would race it for the signature. For listed addresses `/api/sig` answers the regular add-in with 204 (no signature inserted), so what you see always comes from the build under test. The regular add-in's manual buttons keep working. Remove the address when you're done.
+
+**What this doesn't cover.** The local server only swaps the add-in's own files. A change to `/api/sig` or anything else in PHP needs a local portal with a database.
+
+**Manifest changes are a separate step.** The stable manifest is frozen by `tests/Addin/fixtures/manifest-stable.xml`, because any change to an admin-deployed manifest blocks users until an admin consents to it. Promoting files doesn't touch it. The preview manifest already carries what stable should adopt once proven: `ReadWriteItem`, and the API key in the URL fragment so it stays out of access logs.
+
+The channels assume the browser-based runtime (Mac, web, new Outlook on Windows, mobile). Classic Outlook on Windows runs event handlers in a JavaScript-only runtime, which `commands.js` hasn't been tested against.
 
 ### Manual insertion (ribbon buttons, manifest v1.3+)
 

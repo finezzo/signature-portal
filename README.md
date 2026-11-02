@@ -162,6 +162,7 @@ All runtime config lives in `config/config.php`. The installer creates it; you c
 - **Password changes end other sessions** — any password change (self-service, admin reset, or reset link) immediately invalidates every other session of that user. Reset links are single-use, stored only as SHA-256 hashes, and expire after 30 minutes.
 - **Installer is token-gated** — `public/install.php` requires a one-time token written to `config/.install_token` (outside the web root), so a freshly deployed instance can't be claimed by a stranger. Delete the installer after use anyway.
 - **Hardening headers** — `SecurityHeadersMiddleware` sets a Content-Security-Policy, HSTS, `X-Frame-Options`, `X-Content-Type-Options` and `Referrer-Policy` on PHP responses; `public/.htaccess` covers static files, forces HTTPS for the portal and refuses dotfiles. `config/`, `var/`, and `migrations/` carry deny-all `.htaccess` files as a safety net against docroot misconfiguration.
+- **Add-in changes don't have to go to everyone at once** — preview and local channels run as separate add-ins for selected users; see [SETUP.md](SETUP.md#testing-add-in-changes-before-rollout).
 - **Append-only audit log** — every mutation (template, rule, override, user, API key) is recorded with actor email and IP, viewable per tenant under *Activity*.
 
 ## Roadmap

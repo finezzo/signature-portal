@@ -73,6 +73,7 @@ return static function (App $app): void {
         $g->post('/tenants/{id:[0-9]+}/delete',     [TenantController::class, 'delete']);
         $g->post('/tenants/{id:[0-9]+}/rotate-key',           [TenantController::class, 'rotateKey']);
         $g->post('/tenants/{id:[0-9]+}/acknowledge-api-key',  [TenantController::class, 'acknowledgeKey']);
+        $g->post('/tenants/{id:[0-9]+}/addin-testers',        [TenantController::class, 'saveAddinTesters']);
         $g->get('/tenants/{id:[0-9]+}/manifest.xml',[TenantController::class, 'manifest']);
 
         $g->get('/tenants/{id:[0-9]+}/assets',                       [AssetController::class, 'index']);

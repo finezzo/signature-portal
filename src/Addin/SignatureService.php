@@ -49,6 +49,16 @@ final class SignatureService
             return SignatureResult::error(401, 'unknown tenant or invalid api key');
         }
 
+        // A tester runs a preview or local add-in next to the stable one, and
+        // Outlook starts both on the same event in no particular order. Answering
+        // the stable add-in with "no match" (it then leaves the signature alone)
+        // means the signature on screen always comes from the code under test.
+        // Manual picks are explicit user actions and stay available.
+        if (!$req->previewChannel && $req->templateId === null
+            && $tenant->isAddinTester($req->primaryEmail !== '' ? $req->primaryEmail : $req->fromEmail)) {
+            return SignatureResult::noMatch(false);
+        }
+
         // Resolve the user's Graph profile, then decide whether the FROM
         // address is a shared mailbox.
         //

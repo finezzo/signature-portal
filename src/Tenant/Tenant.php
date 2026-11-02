@@ -5,7 +5,10 @@ namespace App\Tenant;
 
 final class Tenant
 {
-    /** @param list<string> $emailDomains */
+    /**
+     * @param list<string> $emailDomains
+     * @param list<string> $addinTesters lowercase addresses of users testing a preview add-in
+     */
     public function __construct(
         public readonly int $id,
         public readonly string $slug,
@@ -27,7 +30,13 @@ final class Tenant
         public readonly ?string $disclaimerHtml,
         public readonly string $createdAt,
         public readonly string $updatedAt,
+        public readonly array $addinTesters = [],
     ) {}
+
+    public function isAddinTester(string $email): bool
+    {
+        return in_array(mb_strtolower(trim($email)), $this->addinTesters, true);
+    }
 
     /**
      * Picks the display mode that should apply when the FROM mailbox is on
@@ -66,6 +75,24 @@ final class Tenant
         return $out;
     }
 
+    /**
+     * Decode the JSON column into a clean address list. The column may not exist
+     * yet where migration 019 hasn't been applied, which reads as "no testers".
+     *
+     * @return list<string>
+     */
+    private static function decodeAddressList(mixed $raw): array
+    {
+        $decoded = is_string($raw) ? json_decode($raw, true) : null;
+        if (!is_array($decoded)) {
+            return [];
+        }
+        return array_values(array_filter(array_map(
+            static fn($a): string => is_string($a) ? mb_strtolower(trim($a)) : '',
+            $decoded
+        )));
+    }
+
     /** @param array<string,mixed> $row */
     public static function fromRow(array $row): self
     {
@@ -100,6 +127,7 @@ final class Tenant
             isset($row['disclaimer_html']) && $row['disclaimer_html'] !== '' ? (string) $row['disclaimer_html'] : null,
             (string) $row['created_at'],
             (string) $row['updated_at'],
+            self::decodeAddressList($row['addin_testers'] ?? null),
         );
     }
 }

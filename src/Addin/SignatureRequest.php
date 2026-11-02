@@ -15,5 +15,6 @@ final class SignatureRequest
         public readonly ?string $language,    // override for Graph preferredLanguage
         public readonly ?string $mailboxType, // 'personal' | 'shared' | null (auto)
         public readonly ?int $templateId = null, // manual pick from the taskpane; bypasses overrides + rules
+        public readonly bool $previewChannel = false, // request comes from a preview/local add-in
     ) {}
 }
